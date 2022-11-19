@@ -9,9 +9,11 @@ local SetDetector = {}
 local libName = "LibSetDetection"
 local em = GetEventManager()
 
----------------
--- Variables --
----------------
+
+
+--[[ --------------- ]]
+--[[ -- Variables -- ]]
+--[[ --------------- ]]
 
 local equippedSets = {}
 local completeSets = {}
@@ -23,11 +25,13 @@ local callbackList = {
           specific = {}
         },
         customSlotUpdateEvent = {},
-      }
+}
 
-------------
--- Tables --
-------------
+
+
+--[[ ------------- ]]
+--[[ -- Utility -- ]]
+--[[ ------------- ]]
 
 local function MergeTables(t1, t2)
   local t = {}
@@ -40,9 +44,11 @@ local function MergeTables(t1, t2)
 	return t
 end
 
-------------
--- Lookup --
-------------
+
+
+--[[ ------------ ]]
+--[[ -- Tables -- ]]
+--[[ ------------ ]]
 
 local barList = {
     ["front"] = HOTBAR_CATEGORY_PRIMARY,
@@ -88,9 +94,11 @@ local twoHanderList = {
     [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
 }
 
----------------
--- Functions --
----------------
+
+
+--[[ --------------- ]]
+--[[ -- Functions -- ]]
+--[[ --------------- ]]
 
 local function ConvertToUnperfectedSetId( setId )
   local unperfectedSetId = GetItemSetUnperfectedSetId( setId )
@@ -129,9 +137,11 @@ local function IsFunction( var )
   return type(var) == "function"
 end
 
----------------
--- Templates --
----------------
+
+
+--[[ --------------- ]]
+--[[ -- Templates -- ]]
+--[[ --------------- ]]
 
 local function GetEquippedSetEntryTemplate(setId)
   local setName, maxEquipped = GetCustomSetInfo( setId )
@@ -142,9 +152,11 @@ local function GetMapBarSetTemplate()
   return {front={}, back={}, body={}, frontSpecific={}, backSpecific={}}
 end
 
------------------
--- Slot Update --
------------------
+
+
+--[[ ----------------- ]]
+--[[ -- Slot Update -- ]]
+--[[ ----------------- ]]
 
 function SetDetector.DelayedUpdateAllSlots(delay)
   if not delay then delay = 1000 end
@@ -180,9 +192,11 @@ function SetDetector.UpdateSingleSlot( slotId )
   end
 end
 
--------------------
--- Lookup Tables --
--------------------
+
+
+--[[ ------------------- ]]
+--[[ -- Lookup Tables -- ]]
+--[[ ------------------- ]]
 
 function SetDetector.GetCurrentEquippedSetList()
   local t = {}
@@ -248,9 +262,11 @@ function SetDetector.GetCurrentBarSetMap()
   return mapBarSet
 end
 
-------------------
--- Table Update --
-------------------
+
+
+--[[ ------------------ ]]
+--[[ -- Table Update -- ]]
+--[[ ------------------ ]]
 
 function SetDetector.QueueLookupTableUpdate()
   if SetDetector.updateCallback then
@@ -270,9 +286,11 @@ function SetDetector.LookupTableUpdate()
   SetDetector.RunCallbackManager()
 end
 
---------------
--- Analysis --
---------------
+
+
+--[[ -------------- ]]
+--[[ -- Analysis -- ]]
+--[[ -------------- ]]
 
 function SetDetector.DetermineSetChanges()
   local setChangesList = {}
@@ -289,9 +307,11 @@ function SetDetector.DetermineSetChanges()
   return setChangesList
 end
 
----------------
--- Callbacks --
----------------
+
+
+--[[ --------------- ]]
+--[[ -- Callbacks -- ]]
+--[[ --------------- ]]
 
 function SetDetector.RunCallbackManager()
 
@@ -313,9 +333,11 @@ function SetDetector.RunCallbackManager()
   end
 end
 
------------------------
--- Exposed Functions --
------------------------
+
+
+--[[ ----------------------- ]]
+--[[ -- Exposed Functions -- ]]
+--[[ ----------------------- ]]
 
 function LibSetDetection.RegisterForSetChanges(name, callback)
   if IsFunction(callback) then
@@ -374,9 +396,11 @@ function LibSetDetection.GetEquipSlotList()
   return ZO_ShallowTableCopy(slotList)
 end
 
-------------
--- Events --
-------------
+
+
+--[[ ------------ ]]
+--[[ -- Events -- ]]
+--[[ ------------ ]]
 
 function SetDetector.OnInitialPlayerActivated()
   SetDetector.DelayedUpdateAllSlots()
@@ -393,9 +417,11 @@ function SetDetector.OnSlotUpdate(_, _, slotId, _, _, _)
   SetDetector.UpdateSingleSlot( slotId )
 end
 
-----------------
--- Initialize --
-----------------
+
+
+--[[ ---------------- ]]
+--[[ -- Initialize -- ]]
+--[[ ---------------- ]]
 
 function SetDetector.Initialize()
 
