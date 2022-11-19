@@ -1,8 +1,3 @@
--- changelog 2->3
--- shallow to deep table
--- performance improvements
--- GetCustomSetInfo
-
 LibSetDetection = LibSetDetection or {}
 local SetDetector = {}
 
