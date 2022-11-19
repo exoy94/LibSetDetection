@@ -1,0 +1,9 @@
+## Title: LibSetDetection
+## APIVersion: 101033
+## Version: 3
+## AddOnVersion: 3
+## Author: @|c00FF00ExoY|r94 (PC/EU)
+## IsLibrary: true
+## Description: Detects the equipped sets and provides callbacks for any changes.
+
+LibSetDetection.lua
