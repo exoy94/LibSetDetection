@@ -2,10 +2,11 @@ LibSetDetection = LibSetDetection or {}
 local SetDetector = {}
 
 local libName = "LibSetDetection"
+local libVersion = 4
 local em = GetEventManager()
 
-local debug = true
-
+local chatDebug = true
+local LibExoY = LibExoYsUtilities
 
 --[[ --------------- ]]
 --[[ -- Variables -- ]]
@@ -14,7 +15,7 @@ local debug = true
 local equippedSets = {}
 local completeSets = {}
 local mapSlotSet = {}
-local updatedSlotsSequence = {}
+local updatedSlotsSequence = {} --order, in which slots are changed 
 local callbackList = {
         setChanges = {
           arbitrary = {},
@@ -307,9 +308,9 @@ function SetDetector.RunCallbackManager()
 
   local setChangesList = SetDetector.DetermineSetChanges()
   for setId, changeStatus in pairs( setChangesList ) do
+    if LibExoY then LibExoY.Debug("code", chatDebug, libName, {GetCustomSetInfo(setId), setId, changeStatus and "equipped" or "unequipped"}, {" (",") "}) end
     for _,callback in pairs(callbackList.setChanges.arbitrary) do
       callback(setId, changeStatus)
-      LibExoY.Debug("code", debug, libName, {GetCustomSetInfo(setId), setId, changeStatus and "equipped" or "unequipped"}, {"(",")"})
     end
     if IsTable(callbackList.setChanges.specific[setId]) and not ZO_IsTableEmpty(callbackList.setChanges.specific[setId]) then
       for _, callback in pairs( callbackList.setChanges.specific[setId] ) do
@@ -319,6 +320,84 @@ function SetDetector.RunCallbackManager()
   end
 
 end
+
+
+--[[ ------------ ]]
+--[[ -- Events -- ]]
+--[[ ------------ ]]
+
+function SetDetector.OnInitialPlayerActivated()
+  SetDetector.DelayedUpdateAllSlots()
+  em:UnregisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
+end
+
+function SetDetector.OnArmoryOperation()
+  SetDetector.DelayedUpdateAllSlots()
+end
+
+function SetDetector.OnSlotUpdate(_, _, slotId, _, _, _)
+  table.insert(updatedSlotsSequence, slotId)
+  SetDetector.UpdateSingleSlot( slotId )
+end
+
+
+--[[ -------------------------------------- ]]
+--[[ -- Sets of GroupMembers (DataShare) -- ]]
+--[[ -------------------------------------- ]]
+
+local LGB = LibGroupBroadcast
+local MsgHandler = {}
+local GroupSets = {}
+
+--- send functions 
+local function SendSetChange( setId, status ) 
+    MsgHandler.SetChange:Send( {setId = setId, status = status} ) 
+end
+
+local function SendLoadout( request ) 
+  local setTable = {}
+  for setId, _ in pairs(completeSets) do 
+    table.insert(setTable, setId) 
+  end
+  MsgHandler.SetChange:Send( {request = request, setTable = setTable} ) 
+end
+
+--- receive functions
+local function OnGroupSetChange( tag, data ) 
+  local charName = GetUnitName(tag) 
+  GroupSets[charName] = GroupSets[charName] or {}
+  GroupSets[charName][data.setId] = data.status
+  -- fire some events  
+  -- add some debug 
+end
+
+local function OnGroupLoadout( tag, data ) 
+  local charName = GetUnitName(tag) 
+  GroupSets[charName] = GroupSets[charName] or {}
+  for _, setId in ipairs(data.setTable) do 
+    GroupSets[charName][data.setId] = true
+  end
+  if data.request then 
+     SendLoadout( false )  
+  end
+  -- fire some events  
+  -- add some debug 
+end
+
+local function InitializeMsgHandler() 
+  MsgHandler.SetChange = LGB:DefineMessageHandler( 101, "LSD_SetChange" )
+  MsgHandler.SetChange:AddField( NumericField:New("setId", {min = 0, max = 2047}) )
+  MsgHandler.SetChange:AddField( FlagField:New("status")) 
+  MsgHandler.SetChange:Finalize( ) 
+  MsgHandler.SetChange:OnData( OnGroupSetChange )
+
+  MsgHandler.Loadout = LGB:DefineMessageHandler( 102, "LSD_Loadout" )
+  MsgHandler.Loadout:AddField( NumericArrayField:New("setTable", {minSize = 0, maxSize = 7}, {min = 0, max = 2047}) )
+  MsgHandler.Loadout:AddField( FlagField:New("request")) 
+  MsgHandler.Loadout:Finalize() 
+end
+
+
 
 --[[ ----------------------- ]]
 --[[ -- Exposed Functions -- ]]
@@ -383,31 +462,100 @@ end
 
 
 
---[[ ------------ ]]
---[[ -- Events -- ]]
---[[ ------------ ]]
+--- Groupmember Sets 
 
-function SetDetector.OnInitialPlayerActivated()
-  SetDetector.DelayedUpdateAllSlots()
-  em:UnregisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
+function LibSetDetection.GetGroupMemberSets( tag )
+  local charName = GetUnitName( tag ) 
+  return groupSets[charName] 
+end 
+
+
+--[[ ------------------- ]]
+--[[ -- Settings Menu -- ]] 
+--[[ ------------------- ]]
+
+local function GetMenuPanelData()
+
+  local isServerEU = GetWorldName() == "EU Megaserver"
+
+  local function SendIngameMail() 
+      SCENE_MANAGER:Show('mailSend')
+      zo_callLater(function() 
+              ZO_MailSendToField:SetText("@Exoy94")
+              ZO_MailSendSubjectField:SetText( libName )
+              ZO_MailSendBodyField:TakeFocus()   
+          end, 250)
+  end
+
+  local function FeedbackButton() 
+      ClearMenu() 
+      if isServerEU then 
+          AddCustomMenuItem("Ingame Mail", SendIngameMail)
+      end
+      AddCustomMenuItem("Esoui.com", function() RequestOpenUnsafeURL("https://www.esoui.com/downloads/info3338-LibSetDetection.html") end )  
+      AddCustomMenuItem("Discord", function() RequestOpenUnsafeURL("https://discord.com/invite/MjfPKsJAS9") end )  
+
+      ShowMenu() 
+  end
+
+  local function DonationButton() 
+      ClearMenu() 
+      if isServerEU then 
+          AddCustomMenuItem("Ingame Mail", SendIngameMail)
+      end
+      AddCustomMenuItem("Buy Me a Coffee!", function() RequestOpenUnsafeURL("https://www.buymeacoffee.com/exoy") end )  
+      ShowMenu() 
+  end
+
+  return    
+  {
+      type                = "panel",
+      name                = libName,
+      displayName         = "Lib Set Detection",
+      author              = "|c00FF00ExoY|r (PC/EU)",
+      version             = "|cFF8800"..tostring(libVersion).."|r",
+      feedback            = FeedbackButton, 
+      donation            = isServerEU and DonationButton or "https://www.buymeacoffee.com/exoy",
+      registerForRefresh = true,
+      registerForUpdate = true,
+  }
 end
 
-function SetDetector.OnArmoryOperation()
-  SetDetector.DelayedUpdateAllSlots()
+local function CreateSettingsMenu() 
+  local LAM2 = LibAddonMenu2
+
+  local optionControls = {} 
+  table.insert(optionControls, {
+    type = "checkbox", 
+    name = "Allow DataShare (still debug var atm)", 
+    getFunc = function() return chatDebug end,
+    setFunc = function(bool) chatDebug = bool end, 
+  })
+  table.insert(optionControls, {type = "divider"} )
+  table.insert(optionControls, {
+    type = "checkbox", 
+    name = "ChatDebug", 
+    getFunc = function() return chatDebug end,
+    setFunc = function(bool) chatDebug = bool end, 
+  })
+
+  LAM2:RegisterAddonPanel(libName.."Menu", GetMenuPanelData() )
+  LAM2:RegisterOptionControls(libName.."Menu", optionControls)
 end
 
-function SetDetector.OnSlotUpdate(_, _, slotId, _, _, _)
-  table.insert(updatedSlotsSequence, slotId)
-  SetDetector.UpdateSingleSlot( slotId )
-end
+
+
 
 --[[ ---------------- ]]
 --[[ -- Initialize -- ]]
 --[[ ---------------- ]]
 
-function SetDetector.Initialize()
+function SetDetector.Initialize() 
+  
+  CreateSettingsMenu()
+  --InitializeMsgHandler()
 
-    --- Initialize Tables
+  --- Initialize Tables
     for slotId, _ in pairs( equipSlotList ) do
       mapSlotSet[slotId] = 0
     end
