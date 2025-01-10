@@ -6,4 +6,6 @@
 ## IsLibrary: true
 ## Description: Detects the equipped sets and provides callbacks for any changes.
 
+## OptionalDependsOn: LibExoYsUtilities
+
 LibSetDetection.lua
