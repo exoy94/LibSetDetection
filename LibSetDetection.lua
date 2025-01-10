@@ -4,6 +4,7 @@ local SetDetector = {}
 local libName = "LibSetDetection"
 local em = GetEventManager()
 
+local debug = true
 
 
 --[[ --------------- ]]
@@ -22,8 +23,6 @@ local callbackList = {
         customSlotUpdateEvent = {},
 }
 
-
-
 --[[ ------------- ]]
 --[[ -- Utility -- ]]
 --[[ ------------- ]]
@@ -39,7 +38,13 @@ local function MergeTables(t1, t2)
 	return t
 end
 
+local function IsTable(t)
+  return type(t) == "table"
+end
 
+local function IsFunction(f)
+  return type(f) == "function"
+end
 
 --[[ ------------ ]]
 --[[ -- Tables -- ]]
@@ -89,8 +94,6 @@ local twoHanderList = {
     [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
 }
 
-
-
 --[[ --------------- ]]
 --[[ -- Functions -- ]]
 --[[ --------------- ]]
@@ -124,15 +127,6 @@ local function IsTwoHander( slotId )
   return twoHanderList[weaponType] ~= nil
 end
 
-local function IsTable(t)
-  return type(t) == "table"
-end
-
-local function IsFunction( var )
-  return type(var) == "function"
-end
-
-
 
 --[[ --------------- ]]
 --[[ -- Templates -- ]]
@@ -146,7 +140,6 @@ end
 local function GetMapBarSetTemplate()
   return {front={}, back={}, body={}, frontSpecific={}, backSpecific={}}
 end
-
 
 
 --[[ ----------------- ]]
@@ -205,6 +198,7 @@ function SetDetector.GetCurrentEquippedSetList()
       t[setId].numEquipped[bar] = t[setId].numEquipped[bar] + 1
     end
   end
+
   -- activeBar list
   for setId, setInfo in pairs(t) do
     local activeBar = t[setId]["activeBar"]
@@ -258,7 +252,6 @@ function SetDetector.GetCurrentBarSetMap()
 end
 
 
-
 --[[ ------------------ ]]
 --[[ -- Table Update -- ]]
 --[[ ------------------ ]]
@@ -282,7 +275,6 @@ function SetDetector.LookupTableUpdate()
 end
 
 
-
 --[[ -------------- ]]
 --[[ -- Analysis -- ]]
 --[[ -------------- ]]
@@ -302,8 +294,6 @@ function SetDetector.DetermineSetChanges()
   return setChangesList
 end
 
-
-
 --[[ --------------- ]]
 --[[ -- Callbacks -- ]]
 --[[ --------------- ]]
@@ -319,6 +309,7 @@ function SetDetector.RunCallbackManager()
   for setId, changeStatus in pairs( setChangesList ) do
     for _,callback in pairs(callbackList.setChanges.arbitrary) do
       callback(setId, changeStatus)
+      LibExoY.Debug("code", debug, libName, {GetCustomSetInfo(setId), setId, changeStatus and "equipped" or "unequipped"}, {"(",")"})
     end
     if IsTable(callbackList.setChanges.specific[setId]) and not ZO_IsTableEmpty(callbackList.setChanges.specific[setId]) then
       for _, callback in pairs( callbackList.setChanges.specific[setId] ) do
@@ -326,9 +317,8 @@ function SetDetector.RunCallbackManager()
       end
     end
   end
+
 end
-
-
 
 --[[ ----------------------- ]]
 --[[ -- Exposed Functions -- ]]
@@ -402,7 +392,6 @@ function SetDetector.OnInitialPlayerActivated()
   em:UnregisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
 end
 
-
 function SetDetector.OnArmoryOperation()
   SetDetector.DelayedUpdateAllSlots()
 end
@@ -412,20 +401,18 @@ function SetDetector.OnSlotUpdate(_, _, slotId, _, _, _)
   SetDetector.UpdateSingleSlot( slotId )
 end
 
-
-
 --[[ ---------------- ]]
 --[[ -- Initialize -- ]]
 --[[ ---------------- ]]
 
 function SetDetector.Initialize()
 
-    -- Initialize Tables
+    --- Initialize Tables
     for slotId, _ in pairs( equipSlotList ) do
       mapSlotSet[slotId] = 0
     end
 
-    -- Register Events
+    --- Register Events
     em:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, SetDetector.OnSlotUpdate )
     em:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_BAG_ID, BAG_WORN)
     em:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_IS_NEW_ITEM, false)
