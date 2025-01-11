@@ -5,7 +5,7 @@
 ## Author: @|c00FF00ExoY|r94 (PC/EU)
 ## IsLibrary: true
 ## Description: Detects the equipped sets and provides callbacks for any changes.
-
+## SavedVariables: LibSetDetectionSV
 ## OptionalDependsOn: LibExoYsUtilities
 
 LibSetDetection.lua
