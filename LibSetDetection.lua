@@ -5,9 +5,9 @@ local libName = "LibSetDetection"
 local libVersion = 4
 local em = GetEventManager()
 local CM = ZO_CallbackObject:New()
+local SV 
 
 local LibExoY = LibExoYsUtilities
-local chatDebug = true
 local debugMsg
 
 --[[ --------------- ]]
@@ -314,6 +314,11 @@ function SetDetector.RunCallbackManager()
   local setChangesList = SetDetector.DetermineSetChanges()
   for setId, changeStatus in pairs( setChangesList ) do
     debugMsg( zo_strformat("player <<1>>equipped <<2>> (<<3>>)", changeStatus and "" or "un", GetCustomSetInfo(setId), setId) )
+
+    if SV.enableDataShare then 
+      MsgHandler.SetChange:Send( {setId = setId, status = changeStatus} )
+    end
+
     for _,callback in pairs(callbackList.setChanges.arbitrary) do
       callback(setId, changeStatus)
     end
@@ -408,16 +413,15 @@ end
 --[[ -- Exposed Functions -- ]]
 --[[ ----------------------- ]]
 
---- (un-)registration for callbacks 
+--- (un-)registration for callbacks (WIP)
 -- origin can be "player" or "group" or "all" (group and player) 
 -- setId can be one setId or a setId-table
 function LibSetDetection.RegisterForSetChange( origin, callback, setId ) 
-  
   CM:RegisterCallback('SetChange'..origin, callback, setId)
 end
 
 function LibSetDetection.UnregisterForSetChange( )
-
+end
 
 
 --- (un-)registration for callbacks of player
@@ -546,16 +550,17 @@ local function CreateSettingsMenu()
   local optionControls = {} 
   table.insert(optionControls, {
     type = "checkbox", 
-    name = "Allow DataShare (still debug var atm)", 
-    getFunc = function() return chatDebug end,
-    setFunc = function(bool) chatDebug = bool end, 
+    name = "Enable DataShare", 
+    getFunc = function() return SV.enableDataShare end,
+    setFunc = function(bool) SV.enableDataShare = bool end, 
+    warning = "Reloadui required"
   })
   table.insert(optionControls, {type = "divider"} )
   table.insert(optionControls, {
     type = "checkbox", 
-    name = "ChatDebug", 
-    getFunc = function() return chatDebug end,
-    setFunc = function(bool) chatDebug = bool end, 
+    name = "Enable Debug", 
+    getFunc = function() return SV.enableDebug end,
+    setFunc = function(bool) SV.enableDebug = bool end, 
   })
 
   LAM2:RegisterAddonPanel(libName.."Menu", GetMenuPanelData() )
@@ -570,12 +575,29 @@ end
 --[[ ---------------- ]]
 
 function SetDetector.Initialize() 
-  
-  CreateSettingsMenu()
-  --InitializeMsgHandler()
 
+  --- Saved Variables and Settings
+  local defaults = { 
+    ["enableDebug"] = false,
+    ["enableDataShare"] = true,
+  }
+  SV = ZO_SavedVars:NewAccountWide("LibSetDetectionSV", 0, nil, defaults, "SavedVariables")
+  CreateSettingsMenu()
+  
+
+  --- Initialize DataShare
+  if GetAPIVersion() < 101045 then SV.enableDataShare = false end
+  if SV.enableDataShare then 
+    InitializeMsgHandler()
+  end
+
+  --- Define Debug
   debugMsg = function(msg, dType) 
-    LibExoY and LibExoY.Debug(dType, chatDebug, libName, msg) or d(msg)
+    if LibExoY then 
+      LibExoY.Debug(dType, chatDebug, libName, msg)  
+    else 
+      d(msg)
+    end
   end 
 
   --- Initialize Tables
