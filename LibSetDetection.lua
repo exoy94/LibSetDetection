@@ -6,9 +6,9 @@ local libVersion = 4
 local em = GetEventManager()
 local CM = ZO_CallbackObject:New()
 
-
-local chatDebug = true
 local LibExoY = LibExoYsUtilities
+local chatDebug = true
+local debugMsg
 
 --[[ --------------- ]]
 --[[ -- Variables -- ]]
@@ -313,7 +313,7 @@ function SetDetector.RunCallbackManager()
 
   local setChangesList = SetDetector.DetermineSetChanges()
   for setId, changeStatus in pairs( setChangesList ) do
-    if LibExoY then LibExoY.Debug("code", chatDebug, libName, {GetCustomSetInfo(setId), setId, changeStatus and "equipped" or "unequipped"}, {" (",") "}) end
+    debugMsg( zo_strformat("player <<1>>equipped <<2>> (<<3>>)", changeStatus and "" or "un", GetCustomSetInfo(setId), setId) )
     for _,callback in pairs(callbackList.setChanges.arbitrary) do
       callback(setId, changeStatus)
     end
@@ -373,7 +373,7 @@ local function OnGroupSetChange( tag, data )
   GroupSets[charName] = GroupSets[charName] or {}
   GroupSets[charName][data.setId] = data.status
   -- fire some events  
-  -- add some debug 
+  debugMsg( zo_strformat("<<1>> (<<2>>) <<3>> equipped <<4>> (<<5>>)", charName, tag, data.status and "" or "un", GetCustomSetInfo(data.setId, setId) ) )
 end
 
 local function OnGroupLoadout( tag, data ) 
@@ -573,6 +573,10 @@ function SetDetector.Initialize()
   
   CreateSettingsMenu()
   --InitializeMsgHandler()
+
+  debugMsg = function(msg, dType) 
+    LibExoY and LibExoY.Debug(dType, chatDebug, libName, msg) or d(msg)
+  end 
 
   --- Initialize Tables
     for slotId, _ in pairs( equipSlotList ) do
