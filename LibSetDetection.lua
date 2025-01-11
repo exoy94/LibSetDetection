@@ -485,11 +485,15 @@ end
 
 
 
---- Groupmember Sets 
+--- GroupMember Sets 
 
 function LibSetDetection.GetGroupMemberSets( tag )
   local charName = GetUnitName( tag ) 
-  return groupSets[charName] 
+  return GroupSets[charName] 
+end 
+
+function LibSetDetection.GetAllGroupMemberSets( )
+  return GroupSets
 end 
 
 
