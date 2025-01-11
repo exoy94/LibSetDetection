@@ -4,6 +4,8 @@ local SetDetector = {}
 local libName = "LibSetDetection"
 local libVersion = 4
 local em = GetEventManager()
+local CM = ZO_CallbackObject:New()
+
 
 local chatDebug = true
 local LibExoY = LibExoYsUtilities
@@ -133,6 +135,10 @@ end
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
+-- templates for table initializations to
+-- ensure propper structure and prevent lua
+-- errors by referring to unexisting subtables
+
 local function GetEquippedSetEntryTemplate(setId)
   local setName, maxEquipped = GetCustomSetInfo( setId )
   return { setName=setName, maxEquipped = maxEquipped, numEquipped = {front=0, back=0, body=0}, activeBar = {} }
@@ -180,7 +186,6 @@ function SetDetector.UpdateSingleSlot( slotId )
     SetDetector.QueueLookupTableUpdate()
   end
 end
-
 
 
 --[[ ------------------- ]]
@@ -403,6 +408,19 @@ end
 --[[ -- Exposed Functions -- ]]
 --[[ ----------------------- ]]
 
+--- (un-)registration for callbacks 
+-- origin can be "player" or "group" or "all" (group and player) 
+-- setId can be one setId or a setId-table
+function LibSetDetection.RegisterForSetChange( origin, callback, setId ) 
+  
+  CM:RegisterCallback('SetChange'..origin, callback, setId)
+end
+
+function LibSetDetection.UnregisterForSetChange( )
+
+
+
+--- (un-)registration for callbacks of player
 function LibSetDetection.RegisterForSetChanges(name, callback)
   if IsFunction(callback) then
     callbackList.setChanges.arbitrary[name] = callback
@@ -429,6 +447,7 @@ function LibSetDetection.UnregisterForCustomSlotUpdateEvent(name)
   callbackList.customSlotUpdateEvent[name] = nil
 end
 
+--- advanced informations 
 function LibSetDetection.GetNumSetPiecesForHotbar(setId, hotbar)
   setId = ConvertToUnperfectedSetId(setId)
   local barKey = ""
