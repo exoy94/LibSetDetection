@@ -12,6 +12,8 @@ local SetDetector = {}
     *bool* request bit 
     array:  *10 bit* setId (irgendwann 11)
             *1 bit* - equip/unequipp or *4bit* numEquip - ( this would be only relevant for sets like shattered fate  but add 3 bits for every set )
+            *1 bit frontbar 
+            *1 bit backbar 
 
 (
 ]]
@@ -343,14 +345,16 @@ end
 --[[ --------------- ]]
 
 function SetDetector.RunCallbackManager()
+  -- run callbacks for every newly equipped and unequipped set
 
   for _,callback in pairs(callbackList.customSlotUpdateEvent) do
+    -- callback all registered slot updates 
     callback( updatedSlotsSequence )
   end
   updatedSlotsSequence = {}
 
   local setChangesList = SetDetector.DetermineSetChanges()
-  -- runn callbacks for every newly equipped and unequipped set
+
   for setId, changeStatus in pairs( setChangesList ) do
     debugMsg( zo_strformat("player <<1>>equipped <<2>> (<<3>>)", changeStatus and "" or "un", GetCustomSetInfo(setId), setId) )
 
