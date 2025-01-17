@@ -1,6 +1,38 @@
 LibSetDetection = LibSetDetection or {}
 local SetDetector = {}
 
+
+
+--- ToDo 
+--[[
+
+[ ] queue functionality 
+[ ] callback manager with simplified api 
+[ ] dataShare:  
+    *bool* request bit 
+    array:  *10 bit* setId (irgendwann 11)
+            *1 bit* - equip/unequipp or *4bit* numEquip - ( this would be only relevant for sets like shattered fate  but add 3 bits for every set )
+
+(
+]]
+
+--- queue
+
+local function AddToQueue()
+  -- check if call_later exist 
+  -- if yes, update timer (probably unregister and register) 
+  -- 
+end
+
+
+-- events for set equipped and unequipped happen after queue is done and current table is compared with old table 
+-- 
+
+
+
+
+--[[ -- OLD VERSION -- ]]
+
 local libName = "LibSetDetection"
 local libVersion = 4
 local em = GetEventManager()
@@ -286,17 +318,23 @@ end
 --[[ -------------- ]]
 
 function SetDetector.DetermineSetChanges()
+  -- compare currently complete sets with last recorded list of complete sets
   local setChangesList = {}
+  -- determine which sets were newly equipped
   for setId, _ in pairs(completeSets) do
     if not SetDetector.lastCompleteSets[setId] then
       setChangesList[setId] = true
     end
   end
+  -- determine, which sets where newly unequipped
   for setId, _ in pairs(SetDetector.lastCompleteSets) do
     if not completeSets[setId] then
       setChangesList[setId] = false
     end
   end
+  -- setChangesList contains a table with 
+  --    key: setId 
+  --    value: equipped (true) or unequipped (false) 
   return setChangesList
 end
 
@@ -312,6 +350,7 @@ function SetDetector.RunCallbackManager()
   updatedSlotsSequence = {}
 
   local setChangesList = SetDetector.DetermineSetChanges()
+  -- runn callbacks for every newly equipped and unequipped set
   for setId, changeStatus in pairs( setChangesList ) do
     debugMsg( zo_strformat("player <<1>>equipped <<2>> (<<3>>)", changeStatus and "" or "un", GetCustomSetInfo(setId), setId) )
 
