@@ -51,7 +51,7 @@ local debugMsg
 local equippedSets = {}
 local completeSets = {}
 local mapSlotSet = {}
-local updatedSlotsSequence = {} --order, in which slots are changed 
+local updatedSlotsSequence = {} -- records order, in which slots are changed 
 local callbackList = {
         setChanges = {
           arbitrary = {},
@@ -198,6 +198,8 @@ function SetDetector.DelayedUpdateAllSlots(delay)
 end
 
 function SetDetector.UpdateAllSlots()
+  -- looping through all slots (e.g. after a reload)
+  -- pauseUpdate prevents unnessary register/stopping of queue timer 
   SetDetector.pauseUpdate = true
   for slotId, _ in pairs( equipSlotList ) do
     table.insert(updatedSlotsSequence, slotId)
@@ -208,7 +210,10 @@ function SetDetector.UpdateAllSlots()
 end
 
 function SetDetector.UpdateSingleSlot( slotId )
+  -- keeping track, which slot has which set
   mapSlotSet[slotId] = GetSetIdBySlotId(slotId)
+  -- handle twohanders
+  -- assigns setId to offhand if it is a two hander 
   if IsWeaponSlot( slotId ) then
       mapSlotSet[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId( EQUIP_SLOT_OFF_HAND )
       mapSlotSet[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId( EQUIP_SLOT_BACKUP_OFF )
@@ -219,7 +224,7 @@ function SetDetector.UpdateSingleSlot( slotId )
         mapSlotSet[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId(EQUIP_SLOT_BACKUP_MAIN)
       end
   end
-  if not SetDetector.pauseUpdate then
+  if not SetDetector.pauseUpdate then 
     SetDetector.QueueLookupTableUpdate()
   end
 end
@@ -277,12 +282,13 @@ end
 function SetDetector.GetCurrentBarSetMap()
   local mapBarSet = GetMapBarSetTemplate()
   for setId, setInfo in pairs(equippedSets) do
-    for bar, _ in pairs(barList) do
-      if setInfo.activeBar[bar] then
-        mapBarSet[bar][setId] = GetCustomSetInfo(setId)
+    for bar, _ in pairs(barList) do   -- front, back, body
+      if setInfo.activeBar[bar] then  -- list active sets for each bar
+        mapBarSet[bar][setId] = GetCustomSetInfo(setId) -- [setId] = *setName* 
       end
     end
   end
+  -- determines sets, they are explusively front or backbar
   for setId, _ in pairs(mapBarSet.front) do
     if not mapBarSet.body[setId] then
       mapBarSet.frontSpecific[setId] = GetCustomSetInfo(setId)
@@ -302,6 +308,8 @@ end
 --[[ ------------------ ]]
 
 function SetDetector.QueueLookupTableUpdate()
+  -- performane a "LookupTableUpdate" after a second 
+  -- timer resets if function is re-called 
   if SetDetector.updateCallback then
     zo_removeCallLater( SetDetector.updateCallback )
   end
@@ -312,11 +320,12 @@ function SetDetector.QueueLookupTableUpdate()
 end
 
 function SetDetector.LookupTableUpdate()
+  -- update/ recalculate all tables 
   SetDetector.lastCompleteSets = ZO_ShallowTableCopy(completeSets)
   equippedSets = SetDetector.GetCurrentEquippedSetList()
   completeSets = SetDetector.GetCurrentCompleteSetList()
   SetDetector.mapBarSet = SetDetector.GetCurrentBarSetMap()
-  SetDetector.RunCallbackManager()
+  SetDetector.RunCallbackManager()  -- perform all registered callbacks
 end
 
 
@@ -394,7 +403,7 @@ function SetDetector.OnArmoryOperation()
 end
 
 function SetDetector.OnSlotUpdate(_, _, slotId, _, _, _)
-  table.insert(updatedSlotsSequence, slotId)
+  table.insert(updatedSlotsSequence, slotId) 
   SetDetector.UpdateSingleSlot( slotId )
 end
 
