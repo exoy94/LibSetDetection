@@ -64,6 +64,10 @@ local callbackList = {
 --[[ -- Utility -- ]]
 --[[ ------------- ]]
 
+-- combines two tables
+-- entries with same key will end have value of second table
+-- this is not a problem here, because I use it to comebine tables with 
+-- slot ids (which are unique) 
 local function MergeTables(t1, t2)
   local t = {}
   for k, v in pairs(t1) do
@@ -172,7 +176,6 @@ end
 -- templates for table initializations to
 -- ensure propper structure and prevent lua
 -- errors by referring to unexisting subtables
-
 local function GetEquippedSetEntryTemplate(setId)
   local setName, maxEquipped = GetCustomSetInfo( setId )
   return { setName=setName, maxEquipped = maxEquipped, numEquipped = {front=0, back=0, body=0}, activeBar = {} }
@@ -228,34 +231,36 @@ end
 
 function SetDetector.GetCurrentEquippedSetList()
   local t = {}
-  -- numEquipped List
-  for bar, _ in pairs( barList ) do
-    for slotId, _ in pairs( slotList[bar] ) do
+
+  --- numEquipped List
+  for bar, _ in pairs( barList ) do   -- front, back, body
+    for slotId, _ in pairs( slotList[bar] ) do    -- slotIds of bars
       local setId = mapSlotSet[slotId]
       if not IsTable( t[setId] ) then
-        t[setId] = GetEquippedSetEntryTemplate( setId )
+        t[setId] = GetEquippedSetEntryTemplate( setId )   -- table, with numEquip for each bar
       end
-      t[setId].numEquipped[bar] = t[setId].numEquipped[bar] + 1
+      t[setId].numEquipped[bar] = t[setId].numEquipped[bar] + 1   -- incremently increase counter for equipped pieces
     end
   end
 
-  -- activeBar list
-  for setId, setInfo in pairs(t) do
+  --- activeBar list
+  for setId, setInfo in pairs(t) do   -- loop through each equipped set
     local activeBar = t[setId]["activeBar"]
-    for bar, _ in pairs( barList ) do
+    for bar, _ in pairs( barList ) do   -- front, back, body 
       local numEquipped = t[setId]["numEquipped"][bar]
-      if bar ~= "body" then
-          numEquipped = numEquipped + t[setId]["numEquipped"]["body"]
+      if bar ~= "body" then   
+          numEquipped = numEquipped + t[setId]["numEquipped"]["body"]   -- add body pieces to bar counts
       end
-      activeBar[bar] = numEquipped >= setInfo.maxEquipped
-    end
-    activeBar["body"] = activeBar["front"] and activeBar["back"]
+      activeBar[bar] = numEquipped >= setInfo.maxEquipped   -- decides if fully equipped (true) for each bar
+    end 
+    -- something is active on body, if it is active on front and back
+    activeBar["body"] = activeBar["front"] and activeBar["back"]  
   end
-  t[0] = nil
+  t[0] = nil --- why???
   return t
 end
 
-
+-- 
 function SetDetector.GetCurrentCompleteSetList()
   local t = {}
   for setId, setInfo in pairs(equippedSets) do
