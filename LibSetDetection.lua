@@ -79,6 +79,10 @@ local function MergeTables(t1, t2)
 	return t
 end
 
+local function IsNumber( n ) 
+  return type(n) == "number"
+end
+
 local function IsTable(t)
   return type(t) == "table"
 end
@@ -470,11 +474,98 @@ end
 --[[ -- Exposed Functions -- ]]
 --[[ ----------------------- ]]
 
+--- Custom Callback Manager 
+
+local CallbackManager = {} 
+
+--- callbacks for setChanges 
+function CallbackManager:FireSetChangeCallbacks( unitType, unitTag, setId, changeType ) 
+  for _, callback in ipairs( self.setChangeCallbacks[unitType] ) do 
+    callback( unitTag, setId, changeType )
+  end
+  for _, callback in ipais( self.setChangeCallbacks.specific[unitType][setId] ) do 
+    callback( unitTag, setId, changeType )  
+  end
+end
+
+function CallbackManager:RegisterSetChangeCallback(callback, unitType, setId) 
+  if not setId then 
+    table.insert( self.setChangeCallbacks[unitType], callback ) 
+  else 
+    if not IsTable( self.setChangeCallbacks.specific[unitType][setId] ) then 
+      self.setChangeCallbacks.specific[unitType][setId] = {}
+    end
+    table.insert( self.setChangeCallbacks.specific[unitType][setId], callback )
+  end
+end
+
+--- callback for custom player Slot Update event 
+
+--- callbacks for group data have changed 
+
+function CallbackManager:RegisterCallback(  )
+
+
+
+local originList = {
+  ["player"] = 1,
+  ["group"] = 2,
+  ["all"] = 3,
+}
 --- (un-)registration for callbacks (WIP)
 -- origin can be "player" or "group" or "all" (group and player) 
--- setId can be one setId or a setId-table
-function LibSetDetection.RegisterForSetChange( origin, callback, setId ) 
-  CM:RegisterCallback('SetChange'..origin, callback, setId)
+-- callback needs to be a function 
+-- origin nilable (default = "player")
+-- setId:nilable (default = nil) - number or numericTable with numbers 
+
+-- Result List: 
+  -- Result = 0 (Successful Registration) 
+  -- Result = 1 (Duplicate Id)
+  -- Result = 2 (Unvalid Callback)
+  -- Result = 3 (Invalid Origin)
+  -- Result = 4 (Invalid Format for SetId Filter)
+local list = {}
+
+function FireCallbacks( unit, setId, changeType )
+
+  for _, data in pairs(list[unit]) do 
+    
+    -- setId = 0 means all 
+    if data.setId == 0 or data.setId == setId then 
+      data.callback(unit, setId, changeType)
+    end
+
+  end
+
+
+end
+
+
+function LibSetDetection.RegisterForSetChange( callback, origin, setId )
+  
+  --- verfiy inputs
+  if cccmList[id] then return 1 end   -- check for duplicate id 
+  if not IsFunction(callback) then return 2 end   -- check for invalid callback (not a function)
+  origin = origin and origin or "player"    -- apply origin default value 
+  if not originList[origin] then return 3 end   -- check for invalid origin (nil, player, group, all) 
+  if not IsNumber(setId) then return 4 end ---TODO support table
+  
+  local AddToTable = function( unitType ) 
+    table.insert(list[unitType], {callback = callback, setId = setId})
+  end
+
+  if origin == "all" then 
+    AddToTable("player")
+    AddToTable("group")
+  else 
+    AddToTable(origin)
+  end
+
+    -- custom callback manager 
+    --[[ CCM = {
+
+        } ]]
+  return 0
 end
 
 function LibSetDetection.UnregisterForSetChange( )
@@ -683,3 +774,9 @@ function SetDetector.OnAddonLoaded(_, addonName)
 end
 
 em:RegisterForEvent(libName, EVENT_ADD_ON_LOADED, SetDetector.OnAddonLoaded)
+
+
+
+--[[ ------------ ]]
+--[[ -- Legacy -- ]]
+--[[ ------------ ]]
