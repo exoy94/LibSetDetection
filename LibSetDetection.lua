@@ -116,25 +116,25 @@ end   -- End of BuildRegistryName
 -- respondsable to check values/format of all inputs provided by user 
 -- outputs result of action (success or error code)
 function CallbackManager:HandleRegistration(action, registryType, unitType, id, callback, filter) 
+  local result = 0
 
   --- verify inputs 
-  if not self.IsValidUnitType(unitType) then return xxx end
-  if not IsFunction(callback) then return xxx end 
-  if not IsValidFilter( reqistryType, filter) then return end 
-  -- check filter format 
-  local 
-
-  local actionResult
+  if not self.IsValidUnitType(unitType) then result = xxx end
+  if not IsFunction(callback) then result = xxx end 
+  if not IsValidFilter( reqistryType, filter) then result = xxx end 
 
   --- perform (un-)registration
-  if action then 
-    actionResult = self:RegisterCallback( registryType, {unitType, filter}, id, callback )
-  else
-    actionResult = self:UnregisterCallback( registryType, {unitType, filter}, id )
-  end 
+  if result == 0 then 
+    if action then 
+      result = self:RegisterCallback( registryType, {unitType, filter}, id, callback )
+    else
+      result = self:UnregisterCallback( registryType, {unitType, filter}, id )
+    end 
+  end
 
-  --- return results 
-  return actionResult 
+  --- output results
+  dbgMsg("ToDo")  
+  return result
 
 end   -- End of HandleRegistration
 
