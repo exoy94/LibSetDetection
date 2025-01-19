@@ -14,6 +14,19 @@ local LibExoY = LibExoYsUtilities
 -- think about error codes
 -- not sure, if "IsValid....Type" is necessary
 
+local function IsNumber( n ) 
+  return type(n) == "number"
+end
+
+local function IsTable(t)
+  return type(t) == "table"
+end
+
+local function IsFunction(f)
+  return type(f) == "function"
+end
+
+
 --[[ ----------- ]]
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
@@ -59,6 +72,25 @@ function CallbackManager.IsValidUnitType( unitType )
   return unitTypeList[unitType]
 end
 
+function CallbackManager.IsValidFilter( registryType, filter) 
+  
+  --- filter is nilable
+  if not filter then return true end 
+
+  --- validate filter for "SetChange" registries
+  -- can be a number or a table of numbers for setIds
+  if registryType == "SetChange" then 
+    if IsNumber(filter) then return end 
+    if IsTable(filter) then 
+      for _, setId in pairs(filter) do 
+        if not IsNumber(filter) then return false end
+      end
+      return true
+    end
+  end
+
+end
+
 
 function CallbackManager:BuildRegistryName( registryType, unitType, filter ) 
   -- *registryType* (string - case sensitive ) = "DetChange" or "DataUpdate"
@@ -76,23 +108,33 @@ function CallbackManager:BuildRegistryName( registryType, unitType, filter )
 
 end   -- End of BuildRegistryName
 
+
+
+
 --- HandleRegistration
 -- called by exposed functions for (un-)registration of callbacks 
 -- respondsable to check values/format of all inputs provided by user 
 -- outputs result of action (success or error code)
-function CallbackManager:HandleRegistration(action, registryType, unitType, id, callback, setId) 
+function CallbackManager:HandleRegistration(action, registryType, unitType, id, callback, filter) 
 
   --- verify inputs 
+  if not self.IsValidUnitType(unitType) then return xxx end
+  if not IsFunction(callback) then return xxx end 
+  if not IsValidFilter( reqistryType, filter) then return end 
+  -- check filter format 
+  local 
 
+  local actionResult
 
   --- perform (un-)registration
   if action then 
-    self:RegisterCallback( registryType, {unitType, setId}, id, callback )
+    actionResult = self:RegisterCallback( registryType, {unitType, filter}, id, callback )
   else
-    self:UnregisterCallback( registryType, {unitType, setId}, id )
+    actionResult = self:UnregisterCallback( registryType, {unitType, filter}, id )
   end 
 
   --- return results 
+  return actionResult 
 
 end   -- End of HandleRegistration
 
@@ -122,6 +164,7 @@ function CallbackManager:RegisterCallback( registryType, filter, id, callback )
   --- add callback to list
   callbackList[id] = callback 
 
+  return xxx
 end   -- End of RegisterCallback
 
 
@@ -139,6 +182,7 @@ function CallbackManager:UnregisterCallback( registryType, filter, id )
   --- remove callback from list 
   callbackList[id] = nil 
 
+  return xxx
 end   -- End of UnregisterCallback
 
 
