@@ -1,56 +1,84 @@
 LibSetDetection = LibSetDetection or {}
+
 local SetDetector = {}
+local CallbackManager = {}
 
 
 
---- ToDo 
---[[
 
-[ ] queue functionality 
-[ ] callback manager with simplified api 
-[ ] dataShare:  
-    *bool* request bit 
-    array:  *10 bit* setId (irgendwann 11)
-            *1 bit* - equip/unequipp or *4bit* numEquip - ( this would be only relevant for sets like shattered fate  but add 3 bits for every set )
-            *1 bit frontbar 
-            *1 bit backbar 
+--[[ ---------------------- ]]
+--[[ -- Callback Manager -- ]]
+--[[ ---------------------- ]]
 
-(
-]]
+CallbackManager.registry = {
+    ["playerSetChange"] = {}, 
+    ["playerSetChangeFiltered"] = {}, 
+    ["playerDataUpdated"] = {}, 
+    ["groupSetChange"] = {}, 
+    ["groupSetChangeFiltered"] = {},
+    ["groupDataUpdated"] = {},  
+  }
 
---- new idea: 
--- registry hat nur die 3 categorien und die daten, somit einfach loops 
--- zudem gibt es callback lists (callback als value, ipair oder name) 
-
-
-
-local CallbackManager 
-
-local registryType = { "setChange", "playerUpdate", "groupUpdate" } 
-
--- possibly remove the "registry" part
-CallbackManager.setChange
-CallbackManager.setChange.player.general[name]
-CallbackManager.setChange.player.specific[setId][name]
-CallbackManager.setChange.group.general
-CallbackManager.setChange.group.specific
---all?
-
-CM.registry.
-
-
-CallbackManager.playerUpdate[1] = { name, callback }
-
-CallbackManager.groupUpdate[name]
-
-
-function CallbackManager:RegisterCallback( registry,  )
+function CallbackManager:FireCallbacks( name, filter, ...)  
+  -- *name* of registry table 
+  -- *filter*:nilable (used to provide setId filter) 
   
+  local callbackList = {}
+  if filter then 
+    if self.registry[name][filter] then 
+      callbackList = self.registry[name][filter]
+    end
+  else 
+    callbackList = self.registry[name]
+  end 
+
+  -- early out if no callbacks exist 
+  if ZO_IsTableEmpty(callbackList) then return end 
+  
+  -- fire all callbacks with provided arguments 
+  for _, callback in pairs( callbackList ) do 
+    callback(...) 
+  end
+
+end
+
+function CallbackManager.BuildRegistryName( registryType, unitType, filter ) 
+  if filtered then 
+    return zo_strformat("<<1>><<2>>", unitType, registryType)
+  else 
+    return zo_strformat("<<1>><<2>>Filtered", unitType, registryType)
+  end
+end
+
+
+function CallbackManager:RegisterCallback( registryType, filter, id, callback )
+  -- *registryType* = "SetChange" or "DataUpdate" 
+  -- *filter* (table) = { [1] = unit, [2] = setId:nilable } 
+
+  local name = CallbackManager.BuildRegistryName( registryType, filter[1], filter[2]) 
+  local registry 
+
+  if filter[2] then
+    if not self.registry[name][filter[2]] then 
+      self.registry[name][filter[2]] = {}
+    end
+    registry = self.registry[name][filter[2]]
+  else 
+    registry = self.registry[name]
+  end
+
+  --- verify inputs 
+  
+  
+
+
+
+  return true 
+
 end
 
 function CallbackManager:IsNameAvailable( name, registry,  )
   self[registry]
-
 end
 
 
@@ -58,25 +86,9 @@ function CallbackManager:UnregisterCallback( name )
 
 end
 
-function CallbackManager:FireCallbacks( registry )
-  if registry == "setChange" then 
-    -- check if additional arguments are provided (unitType and setId) 
 
-  end 
-end
 
-function CallbackManager:GetSetChangeCallbacksForSetId() 
 
---- exposed functions
-
-RegisterForSetChange( name, registry, callback ) 
-AddFilterForSetChange( name, registry, "unitType", "player")
-AddFilterForSetChange( name, registry, "setId", setId)
-RemoveFilterForSetChange( name, registry, "setId" )
-RemoveFilterForSetChange( name, registry, "unitType")
-
-RegisterForPlayerSetChange() 
-RegisterForGroupSetChange()
 
 
 --- queue
