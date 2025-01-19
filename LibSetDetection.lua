@@ -36,6 +36,8 @@ CallbackManager.setChange.group.general
 CallbackManager.setChange.group.specific
 --all?
 
+CM.registry.
+
 
 CallbackManager.playerUpdate[1] = { name, callback }
 
@@ -565,6 +567,36 @@ end
 
 function CallbackManager:RegisterCallback(  )
 
+
+------ 
+local function IsSetIdFilterCorrectFormat( var ) 
+  if not IsNumber(var) then return false end 
+  if IsTable(var) then 
+    for k,v in pairs(var) do 
+      if not IsNumber(v) then return false end 
+    end
+  end
+  return true
+end
+
+local function CM:RegisterCallbacks() 
+
+end
+
+function LibSetDetection.RegisterForPlayerSetUpdate( name, callback, setIdFilter) 
+  
+  --- verify inputs 
+  -- check if name exist 
+  -- check if callback is function 
+  -- check if filter is of correct format 
+
+  local result = RegisterCallbacks( )
+  return result
+end
+
+function LibSetDetection.UnregisterForPlayerSetUpdate( name ) 
+
+end
 
 
 local unitList = {
