@@ -18,6 +18,65 @@ local SetDetector = {}
 (
 ]]
 
+--- new idea: 
+-- registry hat nur die 3 categorien und die daten, somit einfach loops 
+-- zudem gibt es callback lists (callback als value, ipair oder name) 
+
+
+
+local CallbackManager 
+
+local registryType = { "setChange", "playerUpdate", "groupUpdate" } 
+
+-- possibly remove the "registry" part
+CallbackManager.setChange
+CallbackManager.setChange.player.general[name]
+CallbackManager.setChange.player.specific[setId][name]
+CallbackManager.setChange.group.general
+CallbackManager.setChange.group.specific
+--all?
+
+
+CallbackManager.playerUpdate[1] = { name, callback }
+
+CallbackManager.groupUpdate[name]
+
+
+function CallbackManager:RegisterCallback( registry,  )
+  
+end
+
+function CallbackManager:IsNameAvailable( name, registry,  )
+  self[registry]
+
+end
+
+
+function CallbackManager:UnregisterCallback( name ) 
+
+end
+
+function CallbackManager:FireCallbacks( registry )
+  if registry == "setChange" then 
+    -- check if additional arguments are provided (unitType and setId) 
+
+  end 
+end
+
+function CallbackManager:GetSetChangeCallbacksForSetId() 
+
+--- exposed functions
+
+RegisterForSetChange( name, registry, callback ) 
+AddFilterForSetChange( name, registry, "unitType", "player")
+AddFilterForSetChange( name, registry, "setId", setId)
+RemoveFilterForSetChange( name, registry, "setId" )
+RemoveFilterForSetChange( name, registry, "unitType")
+
+RegisterForPlayerSetChange() 
+RegisterForGroupSetChange()
+
+
 --- queue
 
 local function AddToQueue()
@@ -138,6 +197,7 @@ local twoHanderList = {
     [WEAPONTYPE_FROST_STAFF] = "froststaff",          -- 13
     [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
 }
+
 
 --[[ --------------- ]]
 --[[ -- Functions -- ]]
@@ -507,7 +567,7 @@ function CallbackManager:RegisterCallback(  )
 
 
 
-local originList = {
+local unitList = {
   ["player"] = 1,
   ["group"] = 2,
   ["all"] = 3,
@@ -541,15 +601,20 @@ function FireCallbacks( unit, setId, changeType )
 end
 
 
-function LibSetDetection.RegisterForSetChange( callback, origin, setId )
+function LibSetDetection.RegisterForSetChange(name, callback, unitType, setId )
+
+  --- defaults 
   
   --- verfiy inputs
+  if not CallbackManager:IsNameAvailable( name, "setChange", unitType, ) then return 1 end
   if cccmList[id] then return 1 end   -- check for duplicate id 
   if not IsFunction(callback) then return 2 end   -- check for invalid callback (not a function)
-  origin = origin and origin or "player"    -- apply origin default value 
-  if not originList[origin] then return 3 end   -- check for invalid origin (nil, player, group, all) 
+  unitType = unitType and unitType or "player"    -- apply origin default value 
+  if not unitList[unitType] then return 3 end   -- check for invalid origin (nil, player, group, all) 
   if not IsNumber(setId) then return 4 end ---TODO support table
   
+
+
   local AddToTable = function( unitType ) 
     table.insert(list[unitType], {callback = callback, setId = setId})
   end
@@ -566,9 +631,6 @@ function LibSetDetection.RegisterForSetChange( callback, origin, setId )
 
         } ]]
   return 0
-end
-
-function LibSetDetection.UnregisterForSetChange( )
 end
 
 
