@@ -257,26 +257,45 @@ end
 --- End of CallbackManager
 
 
+--[[ ------------------- ]]
+--[[ -- Queue Manager -- ]]
+--[[ ------------------- ]]
+
+-- keeping track of callLater ids
+
+-- application:  wait for slot updates 
+-- wait for setUpdates 
+--- are those two things actually different? 
+--- cuz there can only be a set update if there is a slot update 
+
+-- maybe hook functions in wizzard, dressing room etc to reduce waiting time 
+-- start with simple queue 
+
+--- queue for setChanges can be short 
+--- but collect data for broadcast (like wait 5sec or something?! )
+
+--- keep those values easy accessable for further tuning 
+
+
+--[[ -- SetDetector -- ]]
+
+-- account for the possibility, that somebody switches back and forth, 
+-- so check, if something actually changed before fireing callbacks 
+
+--- perfected sets 
+-- rethink current approach, to reduce everything to non perfected Id 
+-- keep track of actual id's 
+-- in post processing handle perfect and non-perfected sets 
+
+-- decide, if SetDetector 
 
 
 
-
---- queue
-
-local function AddToQueue()
-  -- check if call_later exist 
-  -- if yes, update timer (probably unregister and register) 
-  -- 
-end
-
-
--- events for set equipped and unequipped happen after queue is done and current table is compared with old table 
--- 
-
-
-
-
---[[ -- OLD VERSION -- ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ----------------- %% ]]
+--[[ %% -- OLD VERSION -- %% ]]
+--[[ %% ----------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local libName = "LibSetDetection"
 local libVersion = 4
@@ -368,7 +387,6 @@ local slotList = {
 }
 
 local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
-
 local equipSlotList = MergeTables( slotList["body"], weaponSlotList )
 
 local twoHanderList = {
