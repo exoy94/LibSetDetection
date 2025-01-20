@@ -13,9 +13,20 @@ local LibExoY = LibExoYsUtilities
 -- setId threshold? 
 -- think about error codes
 -- not sure, if "IsValid....Type" is necessary
+-- rethink debugFunc, put call behind debugVar to prevent unnecessary str building 
+-- loop over filter if table for (un-)register
+
+
+--[[ ----------------------- ]]
+--[[ -- Utility Functions -- ]]
+--[[ ----------------------- ]]
 
 local function IsNumber( n ) 
   return type(n) == "number"
+end
+
+local function IsString( str ) 
+  return type(str) == "string"
 end
 
 local function IsTable(t)
@@ -31,10 +42,10 @@ end
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
-debugMsg = function( dType,msg ) 
+debugMsg = function( dType, msg ) 
   if LibExoY then LibExoY.Debug( dType, debugVar, "LibSetDetection", msg ) end
   if dType == "dev" then return end -- ignore dev debug without my lib
-  d( zo_strformat("[LSD-<<1>>] <<2>>",dType,msg) )
+  d( zo_strformat("[LSD-<<1>>] <<2>>", dType, msg) )
 end
 
 
@@ -42,7 +53,7 @@ end
 --[[ -- Callback Manager -- ]]
 --[[ ---------------------- ]]
 
--- initialize registry structure 
+--- initialize registry structure 
 CallbackManager.registry = {
     ["playerSetChange"] = {}, 
     ["playerSetChangeFiltered"] = {}, 
@@ -52,33 +63,36 @@ CallbackManager.registry = {
     ["groupDataUpdated"] = {},  
   }
 
-CallbackManager.errorCodes = {
-  ["duplicateName"] = 1, 
+--- define callback results
+local CALLBACK_RESULT_SUCCESS = 0 
+local CALLBACK_RESULT_INVALID_CALLBACK = 1 
+local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
+local CALLBACK_RESULT_INVALID_FILTER = 3
+local CALLBACK_RESULT_INVALID_NAME = 4 
+local CALLBACK_RESULT_DUPLICATE_NAME = 5
+local CALLBACK_RESULT_UNKNOWN_NAME = 6
+
+CallbackManager.results = {
+  [CALLBACK_RESULT_SUCCESS] = "success",
+  [CALLBACK_RESULT_INVALID_CALLBACK] = "invalid callback",
+  [CALLBACK_RESULT_INVALID_UNITTYPE] = "invalid unitType",
+  [CALLBACK_RESULT_INVALID_FILTER] = "invalid filter", 
+  [CALLBACK_RESULT_INVALID_NAME] = "invalid name",
+  [CALLBACK_RESULT_DUPLICATE_NAME] = "duplicate name",
+  [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
 }
 
-function CallbackManager.IsValidRegistryType( registryType )
-  local registryTypeList = {
-    ["SetChange"] = true, 
-    ["DataUpdate"] = true
-  }
-  return registryTypeList[registryType]
-end
+
+--- callback manager utility
 
 function CallbackManager.IsValidUnitType( unitType )
-  local unitTypeList = {
-    ["player"] = true, 
-    ["group"] = true
-  }
+  local unitTypeList = { ["player"] = true, ["group"] = true }
   return unitTypeList[unitType]
 end
 
 function CallbackManager.IsValidFilter( registryType, filter) 
-  
-  --- filter is nilable
-  if not filter then return true end 
-
-  --- validate filter for "SetChange" registries
-  -- can be a number or a table of numbers for setIds
+  if not filter then return true end -- filter is nilable
+  -- filter for setChanges can be a setId (number) or a table of setIds
   if registryType == "SetChange" then 
     if IsNumber(filter) then return end 
     if IsTable(filter) then 
@@ -88,27 +102,14 @@ function CallbackManager.IsValidFilter( registryType, filter)
       return true
     end
   end
+end   
 
-end
-
-
-function CallbackManager:BuildRegistryName( registryType, unitType, filter ) 
-  -- *registryType* (string - case sensitive ) = "DetChange" or "DataUpdate"
+function CallbackManager.BuildRegistryName( registryType, unitType, filter ) 
+  -- *registryType* (string - case sensitive ) = "SetChange" or "DataUpdate"
   -- *unitType* (string - case sensitive) = "player" or "group" 
-  -- *filter*:nilable - uses "Filtered" 
-
-  if not self.IsValidRegistryType(registryType) then return end
-  if not self.IsValidUnitType(unitType) then return end 
-
-  if filter then 
-    return zo_strformat("<<1>><<2>>", unitType, registryType)
-  else 
-    return zo_strformat("<<1>><<2>>Filtered", unitType, registryType)
-  end
-
-end   -- End of BuildRegistryName
-
-
+  -- *filter*:nilable - determines if suffix is "Filtered" 
+  return zo_strformat("<<1>><<2>>", unitType, registryType, filter and "Filtered" or "")
+end   
 
 
 --- HandleRegistration
@@ -116,81 +117,95 @@ end   -- End of BuildRegistryName
 -- respondsable to check values/format of all inputs provided by user 
 -- outputs result of action (success or error code)
 function CallbackManager:HandleRegistration(action, registryType, unitType, id, callback, filter) 
-  local result = 0
+
+  local resultCode = CALLBACK_RESULT_SUCCESS
 
   --- verify inputs 
-  if not self.IsValidUnitType(unitType) then result = xxx end
-  if not IsFunction(callback) then result = xxx end 
-  if not IsValidFilter( reqistryType, filter) then result = xxx end 
+  if not IsString(id) then resultCode = CALLBACK_RESULT_INVALID_NAME end 
+  if not self.IsValidUnitType(unitType) then resultCode = CALLBACK_RESULT_INVALID_UNITTYPE end
+  if not IsFunction(callback) then resultCode = CALLBACK_RESULT_INVALID_CALLBACK end 
+  if not self.IsValidFilter( reqistryType, filter) then result = CALLBACK_RESULT_INVALID_FILTER end 
+
+  local registryName = self.BuildRegistryName( registryType, unitType, filter)
 
   --- perform (un-)registration
-  if result == 0 then 
+  if resultCode == CALLBACK_RESULT_SUCCESS then 
     if action then 
-      result = self:RegisterCallback( registryType, {unitType, filter}, id, callback )
+      resultCode = self:RegisterCallback( registryName, filter, id, callback )
     else
-      result = self:UnregisterCallback( registryType, {unitType, filter}, id )
+      resultCode = self:UnregisterCallback( registryType, filter, id )
     end 
   end
 
-  --- output results
-  dbgMsg("ToDo")  
-  return result
+  --- development debug
+  if LibExoY and ExoyDev then 
+    local filterStr = ""
+    if IsNumber(filter) then filterStr = tostring(filter) end 
+    if IsTable(filter) then 
+      filterStr = "{"
+      for _, subFilter in pairs(filter) do 
+        filterStr = zo_strformat("<<1>>, <<2>>", filterStr, subFilter)  
+      end
+      filterStr = filterStr.."}"
+    end
+    dbgMsg("dev", zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", self.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
+  end
+
+  --- provide resultCode to caller
+  return resultCode
 
 end   -- End of HandleRegistration
 
 
-function CallbackManager:RegisterCallback( registryType, filter, id, callback )
-  -- *registryType* (string = case sensitive) = "SetChange" or "DataUpdate" 
-  -- *filter* (table) = { 
-  --    [1] = unitType (string - case sensitive) = "player" or "group"
-  --    [2] = setId:nilable (number) } 
-
-  local name = CallbackManager.BuildRegistryName( registryType, filter[1], filter[2]) 
+function CallbackManager:RegisterCallback( registryName, filter, id, callback )
+  -- *registryName* (string)
+  -- *filter*:nilable 
 
   --- getting list of already registered callbacks 
   local callbackList
-  if filter[2] then   
-    self.registry[name][filter[2]] = self.registry[name][filter[2]] or {} -- ensure callbackList is table
-    callbackList = self.registry[name][filter[2]] 
+  if filter then  
+    -- initializes filter subTable 
+    self.registry[registryName][filter] = self.registry[registryName][filter] or {} 
+    callbackList = self.registry[registryName][filter] 
   else 
     callbackList = self.registry[name]
   end
 
-  --- verify name is unique 
-  for callbackId, _ in pairs( callbackList ) do 
-    if callbackId == id then return self.errorCode["duplicateName"] end
-  end
+  --- verifying name is unique 
+  if callbackList[id] then return CALLBACK_RESULT_DUPLICATE_NAME end
   
   --- add callback to list
   callbackList[id] = callback 
+  return CALLBACK_RESULT_SUCCESS
 
-  return xxx
 end   -- End of RegisterCallback
 
 
-function CallbackManager:UnregisterCallback( registryType, filter, id ) 
-  -- *registryType* (string = case sensitive) = "SetChange" or "DataUpdate" 
-  -- *filter* (table) = { 
-  --    [1] = unitType (string - case sensitive) = "player" or "group"
-  --    [2] = setId:nilable (number) } 
-
-  local name = CallbackManager.BuildRegistryName( registryType, filter[1], filter[2]) 
+function CallbackManager:UnregisterCallback( registryName, filter, id ) 
+  -- *registryName* (string) 
+  -- *filter*:nilable
+  -- *id (string)
+  
+  local callbackList 
 
   --- verify that name exists
-  -- return error code 
+  if not callbackList[id] then return CALLBACK_RESULT_UNKNOWN_NAME end 
 
   --- remove callback from list 
   callbackList[id] = nil 
+  return CALLBACK_RESULT_SUCCESS
 
-  return xxx
 end   -- End of UnregisterCallback
 
 
-function CallbackManager:FireCallbacks( name, filter, ...)  
+
+function CallbackManager:FireCallbacks( registryType, unitType, filter, ...)  
   -- *name* of registry table 
   -- *filter*:nilable (used to provide setId filter for setChange callbacks) 
   
+  local name = self:BuildRegistryName( registryType, uniType, filter) 
   local callbackList = {}
+
   -- get list of callbacks 
   if filter then 
     if self.registry[name][filter] then  -- check if any entries for filter exist
