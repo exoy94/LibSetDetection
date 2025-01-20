@@ -1,10 +1,3 @@
-LibSetDetection = LibSetDetection or {}
-
-local SetDetector = {}
-local CallbackManager = {}
-
-local LibExoY = LibExoYsUtilities
-
 --[[ ------------------- ]]
 --[[ -- ToDo / Notes  -- ]]
 --[[ ------------------- ]]
@@ -15,6 +8,86 @@ local LibExoY = LibExoYsUtilities
 -- not sure, if "IsValid....Type" is necessary
 -- rethink debugFunc, put call behind debugVar to prevent unnecessary str building 
 -- loop over filter if table for (un-)register
+--- 0. remove remnants of first code playarounds 
+--- 1. make list of entities and their tasks,
+--- 2. then outline function 
+--- 3. then programm them step by step
+
+
+--- entities (CallbackManager, SetDetector, DataShare, Queue? )
+-- define entities at the beginning 
+-- use local tables within the entities, but access them through the entitty 
+
+LibSetDetection = LibSetDetection or {}
+local libName = "LibSetDetection"
+local libVersion = 4
+
+--[[ -------------- ]]
+--[[ -- Entities -- ]]
+--[[ -------------- ]]
+
+local SetDetector = {} 
+local CallbackManager = {}
+local DataShare = {}
+
+--[[ ------------------- ]]
+--[[ -- Lookup Tables -- ]]
+--[[ ------------------- ]]
+
+local function MergeSlotTables(t1, t2)
+  local t = {}
+  for k, v in pairs(t1) do
+     t[k] = v
+  end
+	for k, v in pairs(t2) do
+	   t[k] = v
+	end
+	return t
+end
+
+
+local barList = {
+  ["front"] = HOTBAR_CATEGORY_PRIMARY,
+  ["back"] = HOTBAR_CATEGORY_BACKUP,
+  ["body"] = -1,
+}
+
+local slotList = {
+["body"] = {
+  [EQUIP_SLOT_HEAD] = "head",                   --  0
+  [EQUIP_SLOT_NECK] = "necklace",               --  1
+  [EQUIP_SLOT_CHEST] = "chest",                 --  2
+  [EQUIP_SLOT_SHOULDERS] = "shoulders",         --  3
+  [EQUIP_SLOT_WAIST] = "waist",                 --  6
+  [EQUIP_SLOT_LEGS] = "legs",                   --  8
+  [EQUIP_SLOT_FEET] = "feet",                   --  9
+  [EQUIP_SLOT_RING1] = "ring1",                 -- 11
+  [EQUIP_SLOT_RING2] = "ring2",                 -- 12
+  [EQUIP_SLOT_HAND] = "hand",                   -- 16
+},
+["front"] = {
+  [EQUIP_SLOT_MAIN_HAND] = "mainFront",         --  4
+  [EQUIP_SLOT_OFF_HAND] = "offFront",           --  5
+},
+["back"] = {
+  [EQUIP_SLOT_BACKUP_MAIN] = "mainBack",        -- 20
+  [EQUIP_SLOT_BACKUP_OFF] = "offBack",          -- 21
+}
+}
+
+local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
+local equipSlotList = MergeTables( slotList["body"], weaponSlotList )
+
+local twoHanderList = {
+  [WEAPONTYPE_TWO_HANDED_SWORD] = "greatsword",     --  4
+  [WEAPONTYPE_TWO_HANDED_AXE] = "battleaxe",        --  5
+  [WEAPONTYPE_TWO_HANDED_HAMMER] = "battlehammer",  --  6
+  [WEAPONTYPE_BOW] = "bow",                         --  8
+  [WEAPONTYPE_HEALING_STAFF] = "healingstaff",      --  9
+  [WEAPONTYPE_FIRE_STAFF] = "firestaff",            -- 12
+  [WEAPONTYPE_FROST_STAFF] = "froststaff",          -- 13
+  [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
+}
 
 
 --[[ ----------------------- ]]
@@ -53,16 +126,6 @@ end
 --[[ -- Callback Manager -- ]]
 --[[ ---------------------- ]]
 
---- initialize registry structure 
-CallbackManager.registry = {
-    ["playerSetChange"] = {}, 
-    ["playerSetChangeFiltered"] = {}, 
-    ["playerDataUpdated"] = {}, 
-    ["groupSetChange"] = {}, 
-    ["groupSetChangeFiltered"] = {},
-    ["groupDataUpdated"] = {},  
-  }
-
 --- define callback results
 local CALLBACK_RESULT_SUCCESS = 0 
 local CALLBACK_RESULT_INVALID_CALLBACK = 1 
@@ -82,9 +145,17 @@ CallbackManager.results = {
   [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
 }
 
+--- initialize registry structure 
+CallbackManager.registry = {
+    ["playerSetChange"] = {}, 
+    ["playerSetChangeFiltered"] = {}, 
+    ["playerDataUpdated"] = {}, 
+    ["groupSetChange"] = {}, 
+    ["groupSetChangeFiltered"] = {},
+    ["groupDataUpdated"] = {},  
+  }
 
 --- callback manager utility
-
 function CallbackManager.IsValidUnitType( unitType )
   local unitTypeList = { ["player"] = true, ["group"] = true }
   return unitTypeList[unitType]
@@ -112,33 +183,34 @@ function CallbackManager.BuildRegistryName( registryType, unitType, filter )
 end   
 
 
+
 --- HandleRegistration
 -- called by exposed functions for (un-)registration of callbacks 
 -- respondsable to check values/format of all inputs provided by user 
 -- outputs result of action (success or error code)
-function CallbackManager:HandleRegistration(action, registryType, unitType, id, callback, filter) 
-
+function CallbackManager.HandleRegistration(action, registryType, unitType, id, callback, filter) 
+  local CM = CallbackManager
   local resultCode = CALLBACK_RESULT_SUCCESS
 
   --- verify inputs 
   if not IsString(id) then resultCode = CALLBACK_RESULT_INVALID_NAME end 
-  if not self.IsValidUnitType(unitType) then resultCode = CALLBACK_RESULT_INVALID_UNITTYPE end
+  if not CM.IsValidUnitType(unitType) then resultCode = CALLBACK_RESULT_INVALID_UNITTYPE end
   if not IsFunction(callback) then resultCode = CALLBACK_RESULT_INVALID_CALLBACK end 
-  if not self.IsValidFilter( reqistryType, filter) then result = CALLBACK_RESULT_INVALID_FILTER end 
+  if not CM.IsValidFilter( reqistryType, filter) then result = CALLBACK_RESULT_INVALID_FILTER end 
 
-  local registryName = self.BuildRegistryName( registryType, unitType, filter)
+  local registryName = CM.BuildRegistryName( registryType, unitType, filter)
 
   --- perform (un-)registration
   if resultCode == CALLBACK_RESULT_SUCCESS then 
     if action then 
-      resultCode = self:RegisterCallback( registryName, filter, id, callback )
+      resultCode = CM.RegisterCallback( registryName, filter, id, callback )
     else
-      resultCode = self:UnregisterCallback( registryType, filter, id )
+      resultCode = CM.UnregisterCallback( registryType, filter, id )
     end 
   end
 
   --- development debug
-  if LibExoY and ExoyDev then 
+  if ExoyDev then 
     local filterStr = ""
     if IsNumber(filter) then filterStr = tostring(filter) end 
     if IsTable(filter) then 
@@ -148,27 +220,30 @@ function CallbackManager:HandleRegistration(action, registryType, unitType, id, 
       end
       filterStr = filterStr.."}"
     end
-    dbgMsg("dev", zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", self.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
+    dbgMsg("dev", zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", CM.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
   end
 
-  --- provide resultCode to caller
+  --- provide result code to caller
   return resultCode
 
 end   -- End of HandleRegistration
 
 
-function CallbackManager:RegisterCallback( registryName, filter, id, callback )
+
+function CallbackManager.RegisterCallback( registryName, filter, id, callback )
   -- *registryName* (string)
   -- *filter*:nilable 
+
+  local CM = CallbackManager
 
   --- getting list of already registered callbacks 
   local callbackList
   if filter then  
     -- initializes filter subTable 
-    self.registry[registryName][filter] = self.registry[registryName][filter] or {} 
-    callbackList = self.registry[registryName][filter] 
+    CM.registry[registryName][filter] = CM.registry[registryName][filter] or {} 
+    callbackList = CM.registry[registryName][filter] 
   else 
-    callbackList = self.registry[name]
+    callbackList = CM.registry[name]
   end
 
   --- verifying name is unique 
@@ -181,7 +256,8 @@ function CallbackManager:RegisterCallback( registryName, filter, id, callback )
 end   -- End of RegisterCallback
 
 
-function CallbackManager:UnregisterCallback( registryName, filter, id ) 
+
+function CallbackManager.UnregisterCallback( registryName, filter, id ) 
   -- *registryName* (string) 
   -- *filter*:nilable
   -- *id (string)
@@ -199,20 +275,20 @@ end   -- End of UnregisterCallback
 
 
 
-function CallbackManager:FireCallbacks( registryType, unitType, filter, ...)  
+function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
   -- *name* of registry table 
   -- *filter*:nilable (used to provide setId filter for setChange callbacks) 
-  
-  local name = self:BuildRegistryName( registryType, uniType, filter) 
+  local CM = CallbackManager
+  local name = CM.BuildRegistryName( registryType, uniType, filter) 
   local callbackList = {}
 
   -- get list of callbacks 
   if filter then 
-    if self.registry[name][filter] then  -- check if any entries for filter exist
-      callbackList = self.registry[name][filter] -- filtered case
+    if CM.registry[name][filter] then  -- check if any entries for filter exist
+      callbackList = CM.registry[name][filter] -- filtered case
     end
   else 
-    callbackList = self.registry[name] -- non filtered case
+    callbackList = CM.registry[name] -- non filtered case
   end 
 
   -- early out if no callbacks exist 
@@ -234,22 +310,22 @@ end   -- End of FireCallbacks
 
 --input: unitType, id, callback, setId
 function LibSetDetection.RegisterForSetChange( ... )
-  return CallbackManager:HandleRegistrations( true, "SetChange", ...)
+  return CallbackManager.HandleRegistrations( true, "SetChange", ...)
 end
 
 --input: unitType, id, callback
 function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager:HandleRegistrations( true, "DataUpdate", ...)
+  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
 end
 
 --input: unitType, id, callback, setId
 function LibSetDetection.UnregisterSetChange( ... ) 
-  return CallbackManager:HandleRegistrations( false, "SetChange", ...)
+  return CallbackManager.HandleRegistrations( false, "SetChange", ...)
 end
 
 --input: unitType, id, callback
 function LibSetDetection.UnregisterDataUpdate( ... ) 
-  return CallbackManager:HandleRegistrations( false, "DataUpdate", ...)
+  return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
 end
 
 
@@ -297,8 +373,6 @@ end
 --[[ %% ----------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
 
-local libName = "LibSetDetection"
-local libVersion = 4
 local em = GetEventManager()
 local CM = ZO_CallbackObject:New()
 local SV 
@@ -779,9 +853,6 @@ local function IsSetIdFilterCorrectFormat( var )
   return true
 end
 
-local function CM:RegisterCallbacks() 
-
-end
 
 function LibSetDetection.RegisterForPlayerSetUpdate( name, callback, setIdFilter) 
   
@@ -1056,6 +1127,7 @@ function SetDetector.Initialize()
     em:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_BAG_ID, BAG_WORN)
     em:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_IS_NEW_ITEM, false)
     em:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_INVENTORY_UPDATE_REASON , INVENTORY_UPDATE_REASON_DEFAULT)
+    ---new: INVENTORY_UPDATE_REASON_ARMORY_BUILD_CHANGED
     em:RegisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED, SetDetector.OnInitialPlayerActivated )
     em:RegisterForEvent( libName.."ArmoryChange", EVENT_ARMORY_BUILD_OPERATION_STARTED, SetDetector.OnArmoryOperation )
 end
