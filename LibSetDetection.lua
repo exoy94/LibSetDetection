@@ -328,9 +328,9 @@ function LibSetDetection.UnregisterDataUpdate( ... )
   return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
 end
 
+--[[ End of CallbackManager ]]
 
 
---- End of CallbackManager
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
@@ -377,11 +377,11 @@ function GroupSets.RemoveSet()
 end
 
 
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ---------------- %% ]]
---[[ %% -- Data Share -- %% ]]
---[[ %% ---------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------------- %% ]]
+--[[ %% -- BroadcastManager -- %% ]]
+--[[ %% ---------------------- %% ]]
+
 
 --- ToDo-List 
 -- Save variables for toggle 
@@ -393,37 +393,6 @@ end
 --    >>> send information if settings change 
 --- dormant, sleep, wake up 
 
-function DataShare.Initialize() 
-  local LGB = LibGroupBroadcast
-  DataShare.msgHandler = LGB:DefineMessageHandler( 1, "LibSetDetection" )
-  local msgArray = StructuredArrayField:New( "SetData", {minSize = 0, maxSize = 7} )
-  msgArray:AddField( NumericField:New("setId", {min=0, max=1023} ) ) 
-  msgArray:AddField( NumericField:New("numEquip", {min=0, max=8} ) )
-  msgArray:AddField( FlagField:New("frontBar") )
-  msgArray:AddField( FlagField:New("backBar") )
-  DataShare.msgHandler:AddField( msgArray )
-  DataShare.msgHandler:Finalize() 
-  
-  DataShare.msgHandler:OnData( GroupSets.OnBroadcast ) 
-end
-
-function DataShare.AddToQueue( playerSetData )
-
-  -- add/overwrite entry for next broadcast
-
-end
-
--- send and receive data
--- register msgHandler 
-
---- data structure (share)
---[[ 2byte per Set: 
-  ["setId"] = 0 - 1023 (10bit) 
-  ["numEq"] = 0 - 14   (4bit)
-  ["frontBar"] = true/false (1bit)
-  ["backBar"] =  true/false (1bit)
-]]
-
 --- information about a group member 
 --[[ 
   ["charName"] as key 
@@ -434,9 +403,120 @@ end
   -- function to convert player data to send data 
   -- api for information about group 
 
+
+
+--[[ -------------- ]]
+--[[ -- Data Msg -- ]]
+
+local DataMsg = {} 
+
+function DataMsg:Initialize() 
+  self.handler = BroadcastManager.LGB:DefineMessageHandler( 1, "LibSetDetection_Data" )
+  local dataArray = StructuredArrayField:New( "SetData", {minSize = 1, maxSize = 8} )
+  dataArray:AddField( NumericField:New("setId", {min=0, max=1023} ) ) 
+  dataArray:AddField( NumericField:New("numBody", {min=0, max=10} ) )
+  dataArray:AddField( NumericField:New("numFront", {min=0, max=2}) )
+  dataArray:AddField( NumericField:New("numBack", {min=0, max=2}) )
+  self.handler:AddField( dataArray )
+  self.handler:Finalize() 
+  self.handler:OnData( xxx ) 
+
+  return self
+end
+
+function DataMsg:StartQueue() 
+  -- start callLater for send 
+  self.queue = zo_callLater( self.OnQueue, self.queueDuration )   
+end
+
+function DataMsg:UpdateQueue() 
+  zo_removeCallLater( self.queue ) 
+  self.queue = zo_callLater( self.OnQueue, self.queueDuration )
+end
+
+function DataMsg:OnQueue() 
+  local data = self:SerilizeData(self.buffer) 
+  self.handler:Send( data ) 
+  self:CleanQueue() 
+end
+
+function DataMsg:CleanQueue() 
+  self.buffer = {} 
+  self.queue = nil  
+end
+
+function DataMsg:AddToQueue(setId, setData ) 
+  if self.queue then 
+    self:UpdateQueue() 
+  else 
+    self:StartQueue() 
+  end 
+  self.buffer[setId] = setData
+end
+
+
+function DataMsg:SendCurrentSetup() 
+  local currentSetup -- request current setup 
+  local data = self:SerilizeData() 
+  self.handler:Send( data ) 
+  -- 
+end
+
+function DataMsg:SerilizeData( rawData ) 
+  local data = {}
+  for setId, setData in pairs(self.buffer) do 
+    table.insert(data, {
+      setId = setId, 
+      numBody = setData.numBody, 
+      numFront = setData.numFront, 
+      numBack = setData.numBack,
+    }
+  end
+  return data 
+end
+
+function DataMsg:ReceiveData(unitTag, data) 
+  
+  local charName = GetUnitName("unitTag")
+  if GetUnitName("player") == charName then 
+    return --- detected msg send by myself (ToDo)
+  end
+
+  -- format data
+  local formattedData = {}
+  for _, setData in ipairs(data) do 
+    formattedData[setData.setId] = {
+      ["numBody"] = setData.numBody, 
+      ["numFront"] = setData.numFront, 
+      ["numBack"] = setData.numBack, 
+    }
+  end 
+
+  --- send data to group/set manager api 
+  
+end
+
+--[[ -- End of DataMsg -- ]]
+--[[ -------------------- ]]
+
+
+function BroadcastManager.Initialize() 
+  BroadcastManager.LGB = LibGroupBroadcast 
+
+  BroadcastManager.DataMsg = DataMsg:Inialize() 
+end
+
+
+--[[ %% ----------------------------- %% ]]
+--[[ %% -- End of BroadcastManager -- %% ]]
+--[[ %% ----------------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+
+
 --[[ ------------------- ]]
 --[[ -- Queue Manager -- ]]
---[[ ------------------- ]]
+
 
 -- keeping track of callLater ids
 
