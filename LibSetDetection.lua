@@ -25,10 +25,11 @@ local libVersion = 4
 --[[ -------------- ]]
 --[[ -- Entities -- ]]
 --[[ -------------- ]]
-
-local SetDetector = {} 
-local CallbackManager = {}
-local DataShare = {}
+ 
+local CallbackManager = {} --CM 
+local PlayerSets = {} -- Ps
+local GroupSets = {} -- GS
+local DataShare = {} -- DS
 
 --[[ ------------------- ]]
 --[[ -- Lookup Tables -- ]]
@@ -88,7 +89,6 @@ local twoHanderList = {
   [WEAPONTYPE_FROST_STAFF] = "froststaff",          -- 13
   [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
 }
-
 
 --[[ ----------------------- ]]
 --[[ -- Utility Functions -- ]]
@@ -332,6 +332,107 @@ end
 
 --- End of CallbackManager
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------ %% ]]
+--[[ %% -- Set Detector -- %% ]]
+--[[ %% ------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+-- determine which sets are equipped/ unequipped 
+-- determine what has changed 
+
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------- %% ]]
+--[[ %% -- Group Sets -- %% ]]
+--[[ %% ---------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+
+--- still needs to determine, if a set is actually now complete or incomplete 
+
+function GroupSets.OnBroadcast( unitTag, receivedData ) 
+  local name = GetUnitName(unitTag) --- str format
+
+  for _, data in ipairs( receivedData ) 
+
+    if data.numEquip == 0 then 
+      GroupSets.RemoveSet( charName, data.setId )
+    else 
+      GroupSets.AddSet( charName, data.setId, {
+        ["numEquip"] = setData.numEquip, 
+        ["front"] = setData.front, 
+        ["back"] = setData.back, 
+      } )
+    end
+
+  end
+
+end
+
+function GroupSets.UpdateSet() 
+end
+
+
+function GroupSets.RemoveSet() 
+
+end
+
+
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------- %% ]]
+--[[ %% -- Data Share -- %% ]]
+--[[ %% ---------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+
+--- ToDo-List 
+-- Save variables for toggle 
+-- handshake for group 
+--    >>> send out greeting when joining group/after a relog/ reloadui 
+--    >>> only enable data sharing when received at least one response 
+--    >>> activate data share if addon is dormant and and receiving a handshake 
+--    >>> handle change in group composition 
+--    >>> send information if settings change 
+--- dormant, sleep, wake up 
+
+function DataShare.Initialize() 
+  local LGB = LibGroupBroadcast
+  DataShare.msgHandler = LGB:DefineMessageHandler( 1, "LibSetDetection" )
+  local msgArray = StructuredArrayField:New( "SetData", {minSize = 0, maxSize = 7} )
+  msgArray:AddField( NumericField:New("setId", {min=0, max=1023} ) ) 
+  msgArray:AddField( NumericField:New("numEquip", {min=0, max=8} ) )
+  msgArray:AddField( FlagField:New("frontBar") )
+  msgArray:AddField( FlagField:New("backBar") )
+  DataShare.msgHandler:AddField( msgArray )
+  DataShare.msgHandler:Finalize() 
+  
+  DataShare.msgHandler:OnData( GroupSets.OnBroadcast ) 
+end
+
+function DataShare.AddToQueue( playerSetData )
+
+  -- add/overwrite entry for next broadcast
+
+end
+
+-- send and receive data
+-- register msgHandler 
+
+--- data structure (share)
+--[[ 2byte per Set: 
+  ["setId"] = 0 - 1023 (10bit) 
+  ["numEq"] = 0 - 14   (4bit)
+  ["frontBar"] = true/false (1bit)
+  ["backBar"] =  true/false (1bit)
+]]
+
+--- information about a group member 
+--[[ 
+  ["charName"] as key 
+    for each setId = {numEq, fb, bb}  
+]]
+  -- function to convert between received data and save array 
+  -- function to check, if something changeed before sending data
+  -- function to convert player data to send data 
+  -- api for information about group 
 
 --[[ ------------------- ]]
 --[[ -- Queue Manager -- ]]
@@ -804,138 +905,9 @@ local function InitializeMsgHandler()
   MsgHandler.Loadout:Finalize() 
 end
 
-
-
---[[ ----------------------- ]]
---[[ -- Exposed Functions -- ]]
---[[ ----------------------- ]]
-
---- Custom Callback Manager 
-
-local CallbackManager = {} 
-
---- callbacks for setChanges 
-function CallbackManager:FireSetChangeCallbacks( unitType, unitTag, setId, changeType ) 
-  for _, callback in ipairs( self.setChangeCallbacks[unitType] ) do 
-    callback( unitTag, setId, changeType )
-  end
-  for _, callback in ipais( self.setChangeCallbacks.specific[unitType][setId] ) do 
-    callback( unitTag, setId, changeType )  
-  end
-end
-
-function CallbackManager:RegisterSetChangeCallback(callback, unitType, setId) 
-  if not setId then 
-    table.insert( self.setChangeCallbacks[unitType], callback ) 
-  else 
-    if not IsTable( self.setChangeCallbacks.specific[unitType][setId] ) then 
-      self.setChangeCallbacks.specific[unitType][setId] = {}
-    end
-    table.insert( self.setChangeCallbacks.specific[unitType][setId], callback )
-  end
-end
-
---- callback for custom player Slot Update event 
-
---- callbacks for group data have changed 
-
-function CallbackManager:RegisterCallback(  )
-
-
------- 
-local function IsSetIdFilterCorrectFormat( var ) 
-  if not IsNumber(var) then return false end 
-  if IsTable(var) then 
-    for k,v in pairs(var) do 
-      if not IsNumber(v) then return false end 
-    end
-  end
-  return true
-end
-
-
-function LibSetDetection.RegisterForPlayerSetUpdate( name, callback, setIdFilter) 
-  
-  --- verify inputs 
-  -- check if name exist 
-  -- check if callback is function 
-  -- check if filter is of correct format 
-
-  local result = RegisterCallbacks( )
-  return result
-end
-
-function LibSetDetection.UnregisterForPlayerSetUpdate( name ) 
-
-end
-
-
-local unitList = {
-  ["player"] = 1,
-  ["group"] = 2,
-  ["all"] = 3,
-}
---- (un-)registration for callbacks (WIP)
--- origin can be "player" or "group" or "all" (group and player) 
--- callback needs to be a function 
--- origin nilable (default = "player")
--- setId:nilable (default = nil) - number or numericTable with numbers 
-
--- Result List: 
-  -- Result = 0 (Successful Registration) 
-  -- Result = 1 (Duplicate Id)
-  -- Result = 2 (Unvalid Callback)
-  -- Result = 3 (Invalid Origin)
-  -- Result = 4 (Invalid Format for SetId Filter)
-local list = {}
-
-function FireCallbacks( unit, setId, changeType )
-
-  for _, data in pairs(list[unit]) do 
-    
-    -- setId = 0 means all 
-    if data.setId == 0 or data.setId == setId then 
-      data.callback(unit, setId, changeType)
-    end
-
-  end
-
-
-end
-
-
-function LibSetDetection.RegisterForSetChange(name, callback, unitType, setId )
-
-  --- defaults 
-  
-  --- verfiy inputs
-  if not CallbackManager:IsNameAvailable( name, "setChange", unitType, ) then return 1 end
-  if cccmList[id] then return 1 end   -- check for duplicate id 
-  if not IsFunction(callback) then return 2 end   -- check for invalid callback (not a function)
-  unitType = unitType and unitType or "player"    -- apply origin default value 
-  if not unitList[unitType] then return 3 end   -- check for invalid origin (nil, player, group, all) 
-  if not IsNumber(setId) then return 4 end ---TODO support table
-  
-
-
-  local AddToTable = function( unitType ) 
-    table.insert(list[unitType], {callback = callback, setId = setId})
-  end
-
-  if origin == "all" then 
-    AddToTable("player")
-    AddToTable("group")
-  else 
-    AddToTable(origin)
-  end
-
-    -- custom callback manager 
-    --[[ CCM = {
-
-        } ]]
-  return 0
-end
-
+--[[ -------------------------------- ]]
+--[[ -- Exposed Functions (Legacy) -- ]]
+--[[ -------------------------------- ]]
 
 --- (un-)registration for callbacks of player
 function LibSetDetection.RegisterForSetChanges(name, callback)
