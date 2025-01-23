@@ -358,6 +358,86 @@ end
 
 
 
+
+--[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ----------------- %% ]]
+--[[ %% -- Set Manager -- %% ]]
+--[[ %% ----------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
+
+SetManager.__index = SetManager 
+
+function SetManager:New() 
+  self.
+  self.data -- current datqa 
+  self.reference = self:InitReference()  -- last setup to determine changes 
+end
+
+
+function SetManager:InitReference() 
+  local reference = {
+    ["data"] = {}, 
+  }
+  return reference
+end
+
+function SetManager:GetTemplate() 
+
+end
+
+
+function SetManager:HandlePerfectedSet() 
+
+end
+
+
+function SetManager:AnalyseData() 
+
+end
+
+
+function SetManager:DetermineChanges() 
+  -- try the _eq thing, moony showed me
+
+  -- do this after AnalyseData on all aspects 
+
+end
+
+function SetManager:UpdateData( newData )
+  -- clear reference 
+  -- safe current state as reference  
+  -- write new data to data 
+  for setId, setData in ipairs( newData ) 
+    data[setId] = data 
+  end
+
+
+end
+
+
+function SetManager:FinishedUpdatingData() 
+  -- send data to callback manager or broadcast 
+end
+
+
+PlayerSets = SetManager:New("player") 
+
+
+
+
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------- %% ]]
+--[[ %% -- Group Manager -- %% ]]
+--[[ %% ------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+GroupSets[charName] = SetManager:New("group") 
+ 
+-- knowing who has addon active 
+-- communication with broadcast manager to wake up, go dormant 
+
+
+
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
 --[[ %% -- Set Detector -- %% ]]
