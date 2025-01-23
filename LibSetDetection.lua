@@ -21,15 +21,16 @@
 LibSetDetection = LibSetDetection or {}
 local libName = "LibSetDetection"
 local libVersion = 4
+local EM = GetEventManager() 
+local SV 
 
 --[[ -------------- ]]
 --[[ -- Entities -- ]]
 --[[ -------------- ]]
  
 local CallbackManager = {} --CM 
-local PlayerSets = {} -- Ps
-local GroupSets = {} -- GS
-local DataShare = {} -- DS
+local BroadcastManager = {} -- BM
+local SetDetector =  {} -- SM
 
 --[[ ------------------- ]]
 --[[ -- Lookup Tables -- ]]
@@ -46,7 +47,6 @@ local function MergeSlotTables(t1, t2)
 	return t
 end
 
-
 local barList = {
   ["front"] = HOTBAR_CATEGORY_PRIMARY,
   ["back"] = HOTBAR_CATEGORY_BACKUP,
@@ -54,26 +54,26 @@ local barList = {
 }
 
 local slotList = {
-["body"] = {
-  [EQUIP_SLOT_HEAD] = "head",                   --  0
-  [EQUIP_SLOT_NECK] = "necklace",               --  1
-  [EQUIP_SLOT_CHEST] = "chest",                 --  2
-  [EQUIP_SLOT_SHOULDERS] = "shoulders",         --  3
-  [EQUIP_SLOT_WAIST] = "waist",                 --  6
-  [EQUIP_SLOT_LEGS] = "legs",                   --  8
-  [EQUIP_SLOT_FEET] = "feet",                   --  9
-  [EQUIP_SLOT_RING1] = "ring1",                 -- 11
-  [EQUIP_SLOT_RING2] = "ring2",                 -- 12
-  [EQUIP_SLOT_HAND] = "hand",                   -- 16
-},
-["front"] = {
-  [EQUIP_SLOT_MAIN_HAND] = "mainFront",         --  4
-  [EQUIP_SLOT_OFF_HAND] = "offFront",           --  5
-},
-["back"] = {
-  [EQUIP_SLOT_BACKUP_MAIN] = "mainBack",        -- 20
-  [EQUIP_SLOT_BACKUP_OFF] = "offBack",          -- 21
-}
+  ["body"] = {
+    [EQUIP_SLOT_HEAD] = "head",                   --  0
+    [EQUIP_SLOT_NECK] = "necklace",               --  1
+    [EQUIP_SLOT_CHEST] = "chest",                 --  2
+    [EQUIP_SLOT_SHOULDERS] = "shoulders",         --  3
+    [EQUIP_SLOT_WAIST] = "waist",                 --  6
+    [EQUIP_SLOT_LEGS] = "legs",                   --  8
+    [EQUIP_SLOT_FEET] = "feet",                   --  9
+    [EQUIP_SLOT_RING1] = "ring1",                 -- 11
+    [EQUIP_SLOT_RING2] = "ring2",                 -- 12
+    [EQUIP_SLOT_HAND] = "hand",                   -- 16
+  },
+  ["front"] = {
+    [EQUIP_SLOT_MAIN_HAND] = "mainFront",         --  4
+    [EQUIP_SLOT_OFF_HAND] = "offFront",           --  5
+  },
+  ["back"] = {
+    [EQUIP_SLOT_BACKUP_MAIN] = "mainBack",        -- 20
+    [EQUIP_SLOT_BACKUP_OFF] = "offBack",          -- 21
+  }
 }
 
 local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
@@ -90,9 +90,9 @@ local twoHanderList = {
   [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
 }
 
---[[ ----------------------- ]]
---[[ -- Utility Functions -- ]]
---[[ ----------------------- ]]
+--[[ ------------------------------- ]]
+--[[ -- Generic Utility Functions -- ]]
+--[[ ------------------------------- ]]
 
 local function IsNumber( n ) 
   return type(n) == "number"
@@ -110,23 +110,59 @@ local function IsFunction(f)
   return type(f) == "function"
 end
 
+--[[ -------------------------------- ]]
+--[[ -- Specific Utility Functions -- ]]
+--[[ -------------------------------- ]]
+
+local function GetSetIdBySlotId( slotId )
+  local _, _, _, _, _, setId = GetItemLinkSetInfo( GetItemLink(BAG_WORN, slotId) )
+  return setId
+end
+
+local function IsWeaponSlot( slotId )
+  return weaponSlotList[slotId] ~= nil
+end
+
+local function IsTwoHander( slotId )
+  local weaponType = GetItemWeaponType(BAG_WORN, slotId)
+  return twoHanderList[weaponType] ~= nil
+end
+
+local function GetSetNameBySetId( setId ) 
+  local _, setName = GetItemSetInfo( setId )
+  return setName
+end 
+
+local function GetMaxEquipBySetId( setId )
+  local _, _, _, _, _, maxEquip = GetItemSetInfo( setId )
+  return maxEquip
+end
+
+
 
 --[[ ----------- ]]
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
-debugMsg = function( dType, msg ) 
-  if LibExoY then LibExoY.Debug( dType, debugVar, "LibSetDetection", msg ) end
-  if dType == "dev" then return end -- ignore dev debug without my lib
-  d( zo_strformat("[LSD-<<1>>] <<2>>", dType, msg) )
+debugMsg = function( msg,  ) 
+  if not SV.debug then return end
+  d( zo_strformat("[<<1>>-LSD] <<2>>", GetTimeString(), msg) )
 end
 
 
---[[ ---------------------- ]]
---[[ -- Callback Manager -- ]]
---[[ ---------------------- ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------------- %% ]]
+--[[ %% -- Callback Manager -- %% ]]
+--[[ %% ---------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
---- define callback results
+--[[Typical Inputs]]
+-- *registryType* (string - case sensitive ): "SetChange" or "DataUpdate"
+-- *unitType* (string - case sensitive) = "player" or "group" 
+-- *id* (string - case sensitive): unique name (for each registryType/unitType) 
+-- *filter*:nilable (if *registryType = "SetChange", needs to be table of numbers (setIds) )
+
+--- result code definition
 local CALLBACK_RESULT_SUCCESS = 0 
 local CALLBACK_RESULT_INVALID_CALLBACK = 1 
 local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
@@ -145,7 +181,7 @@ CallbackManager.results = {
   [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
 }
 
---- initialize registry structure 
+--- registry initialization
 CallbackManager.registry = {
     ["playerSetChange"] = {}, 
     ["playerSetChangeFiltered"] = {}, 
@@ -155,85 +191,83 @@ CallbackManager.registry = {
     ["groupDataUpdated"] = {},  
   }
 
---- callback manager utility
+
 function CallbackManager.IsValidUnitType( unitType )
   local unitTypeList = { ["player"] = true, ["group"] = true }
   return unitTypeList[unitType]
 end
 
+
 function CallbackManager.IsValidFilter( registryType, filter) 
   if not filter then return true end -- filter is nilable
-  -- filter for setChanges can be a setId (number) or a table of setIds
+  -- filter for setChanges needs to be number 
   if registryType == "SetChange" then 
-    if IsNumber(filter) then return end 
     if IsTable(filter) then 
       for _, setId in pairs(filter) do 
         if not IsNumber(filter) then return false end
       end
       return true
     end
+  else 
+    return false
   end
 end   
 
-function CallbackManager.BuildRegistryName( registryType, unitType, filter ) 
-  -- *registryType* (string - case sensitive ) = "SetChange" or "DataUpdate"
-  -- *unitType* (string - case sensitive) = "player" or "group" 
-  -- *filter*:nilable - determines if suffix is "Filtered" 
+
+function CallbackManager.BuildRegistryName( registryType, unitType, filterTable ) 
+  -- dynamically building name of table in registry
+  -- adds suffix "Filtered" if filter exists
   return zo_strformat("<<1>><<2>>", unitType, registryType, filter and "Filtered" or "")
-end   
+end 
 
 
-
---- HandleRegistration
--- called by exposed functions for (un-)registration of callbacks 
--- respondsable to check values/format of all inputs provided by user 
--- outputs result of action (success or error code)
-function CallbackManager.HandleRegistration(action, registryType, unitType, id, callback, filter) 
+function CallbackManager.HandleRegistration(action, registryType, unitType, id, callback, filterTable)
+  --[[Info]]
+  -- interface between exposed function and callback manager
+  -- validates user input 
+  --[[Inputs]] 
+  -- *action* (bool) - true/registration or false/unregistration
+  --[[Output]]
+  -- *resultCode* (number) - code to determine outcome of (un-)registration
   local CM = CallbackManager
-  local resultCode = CALLBACK_RESULT_SUCCESS
+  local resultCode = CALLBACK_RESULT_SUCCESS 
 
-  --- verify inputs 
+  --- verify user inputs 
   if not IsString(id) then resultCode = CALLBACK_RESULT_INVALID_NAME end 
   if not CM.IsValidUnitType(unitType) then resultCode = CALLBACK_RESULT_INVALID_UNITTYPE end
   if not IsFunction(callback) then resultCode = CALLBACK_RESULT_INVALID_CALLBACK end 
-  if not CM.IsValidFilter( reqistryType, filter) then result = CALLBACK_RESULT_INVALID_FILTER end 
+  if not CM.IsValidFilter( reqistryType, filterTable) then result = CALLBACK_RESULT_INVALID_FILTER end 
 
-  local registryName = CM.BuildRegistryName( registryType, unitType, filter)
+  --- determine the correct registry table name 
+  local registryName = CM.BuildRegistryName( registryType, unitType, filterTable)
 
   --- perform (un-)registration
   if resultCode == CALLBACK_RESULT_SUCCESS then 
-    if action then 
-      resultCode = CM.RegisterCallback( registryName, filter, id, callback )
-    else
-      resultCode = CM.UnregisterCallback( registryType, filter, id )
-    end 
+    for _,filter in pairs(filterTable) do 
+      if action then 
+        resultCode = CM.RegisterCallback( registryName, filter, id, callback )
+      else
+        resultCode = CM.UnregisterCallback( registryType, filter, id )
+      end 
+    end
   end
 
-  --- development debug
-  if ExoyDev then 
-    local filterStr = ""
-    if IsNumber(filter) then filterStr = tostring(filter) end 
-    if IsTable(filter) then 
-      filterStr = "{"
-      for _, subFilter in pairs(filter) do 
-        filterStr = zo_strformat("<<1>>, <<2>>", filterStr, subFilter)  
-      end
-      filterStr = filterStr.."}"
+  if SV.debug then 
+    local filterStr = "{"
+    for _, filter in pairs(filterTable) do 
+      filterStr = zo_strformat("<<1>>, <<2>>", filterStr, filter) 
     end
-    dbgMsg("dev", zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", CM.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
+    filterStr = filterStr.."}"
+    debugMsg( zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", CM.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
   end
 
   --- provide result code to caller
   return resultCode
-
 end   -- End of HandleRegistration
 
 
 
 function CallbackManager.RegisterCallback( registryName, filter, id, callback )
-  -- *registryName* (string)
-  -- *filter*:nilable 
-
   local CM = CallbackManager
 
   --- getting list of already registered callbacks 
@@ -252,16 +286,11 @@ function CallbackManager.RegisterCallback( registryName, filter, id, callback )
   --- add callback to list
   callbackList[id] = callback 
   return CALLBACK_RESULT_SUCCESS
-
 end   -- End of RegisterCallback
 
 
 
-function CallbackManager.UnregisterCallback( registryName, filter, id ) 
-  -- *registryName* (string) 
-  -- *filter*:nilable
-  -- *id (string)
-  
+function CallbackManager.UnregisterCallback( registryName, filter, id )  
   local callbackList 
 
   --- verify that name exists
@@ -270,14 +299,11 @@ function CallbackManager.UnregisterCallback( registryName, filter, id )
   --- remove callback from list 
   callbackList[id] = nil 
   return CALLBACK_RESULT_SUCCESS
-
 end   -- End of UnregisterCallback
 
 
 
 function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
-  -- *name* of registry table 
-  -- *filter*:nilable (used to provide setId filter for setChange callbacks) 
   local CM = CallbackManager
   local name = CM.BuildRegistryName( registryType, uniType, filter) 
   local callbackList = {}
@@ -295,35 +321,35 @@ function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)
   if ZO_IsTableEmpty(callbackList) then return end 
 
   -- debug of registryName and filter (if existing)
-  debugMsg("dev", zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)")") or "")
-  
+  if SV.debug then 
+    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)")") or "")
+  end
   -- fire all callbacks with provided arguments 
   for _, callback in pairs( callbackList ) do 
     callback(...) 
   end
-
 end   -- End of FireCallbacks
 
 
 
 --- Exposed Functions for Registration/Unregistration 
 
---input: unitType, id, callback, setId
+-- user input: unitType, id, callback, {setIds} - optional
 function LibSetDetection.RegisterForSetChange( ... )
   return CallbackManager.HandleRegistrations( true, "SetChange", ...)
 end
 
---input: unitType, id, callback
+-- user input: unitType, id, callback
 function LibSetDetection.RegisterForDataUpdate( ... ) 
   return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
 end
 
---input: unitType, id, callback, setId
+-- user input: unitType, id, callback, {setIds} - (optional)
 function LibSetDetection.UnregisterSetChange( ... ) 
   return CallbackManager.HandleRegistrations( false, "SetChange", ...)
 end
 
---input: unitType, id, callback
+-- user input: unitType, id, callback
 function LibSetDetection.UnregisterDataUpdate( ... ) 
   return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
 end
@@ -338,44 +364,83 @@ end
 --[[ %% ------------------ %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+--[[ IDEA ]]
+
+--[[
+* make a class for one unit (this can be player or group member) 
+* contains function for analysis of setup, determining changes etc 
+* attribut for player or group, to select correct callbacks/broadcast 
+* or do it by name?! 
+* 
+
+
+
+
+
+]]
+
+
+--[[ ----- ]]
+
+
+--------
+
+--- initialize set detector 
+
+SetDetector.equippedSets = { ["player"]={}, ["group"]={} }
+
+function SetDetector.Initialize() 
+  for slotId, _ in pairs( equipSlotList ) do 
+      equippedSet[slotId] = 0
+  end
+end
+
+--[[ -- Player Sets -- ]]
+function SetDetector.UpdateSlot( slotId )
+  local setList = SetDetector.equippedSets.player
+  -- keeping track, which slot has which set
+  setList[slotId] = GetSetIdBySlotId(slotId)
+  -- if two-handers, assigns setId of main-hand to off-hand  
+  if IsWeaponSlot( slotId ) then
+    setList[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId( EQUIP_SLOT_OFF_HAND )
+    setList[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId( EQUIP_SLOT_BACKUP_OFF )
+    if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
+      setList[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId(EQUIP_SLOT_MAIN_HAND)
+    end
+    if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
+      setList[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId(EQUIP_SLOT_BACKUP_MAIN)
+    end
+  end
+  --- continue processing
+end
+
+function SetDetector.UpdateAllSlots() 
+  for slotId, _ in pairs( equipSlotList ) do 
+    SetDetector.UpdateSlot( slotId )    
+  end 
+end
+
+function SetDetector.QueueAnalysis() --- only for player, group already has enough queue upto this point 
+  if SetDetector.queue then 
+    zo_removeCallLater( SetDetector.queue ) 
+  end
+  SetDetector.queue = zo_callLater( 
+    function() 
+      SetDetector.queue = nil 
+      SetDetector.AnalyseSetup() 
+    end, 1000)
+end
+
+
+function SetDetector.AnalyseSetup() --- for group and player
+  -- input is table with entry for each setId 
+  -- with numBody, numFront and numBack 
+
+  -- determine 
+end
+
 -- determine which sets are equipped/ unequipped 
 -- determine what has changed 
-
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ---------------- %% ]]
---[[ %% -- Group Sets -- %% ]]
---[[ %% ---------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
-
---- still needs to determine, if a set is actually now complete or incomplete 
-
-function GroupSets.OnBroadcast( unitTag, receivedData ) 
-  local name = GetUnitName(unitTag) --- str format
-
-  for _, data in ipairs( receivedData ) 
-
-    if data.numEquip == 0 then 
-      GroupSets.RemoveSet( charName, data.setId )
-    else 
-      GroupSets.AddSet( charName, data.setId, {
-        ["numEquip"] = setData.numEquip, 
-        ["front"] = setData.front, 
-        ["back"] = setData.back, 
-      } )
-    end
-
-  end
-
-end
-
-function GroupSets.UpdateSet() 
-end
-
-
-function GroupSets.RemoveSet() 
-
-end
-
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ---------------------- %% ]]
@@ -409,7 +474,6 @@ end
 --[[ -- Data Msg -- ]]
 
 local DataMsg = {} 
-
 function DataMsg:Initialize() 
   self.handler = BroadcastManager.LGB:DefineMessageHandler( 1, "LibSetDetection_Data" )
   local dataArray = StructuredArrayField:New( "SetData", {minSize = 1, maxSize = 8} )
@@ -419,30 +483,29 @@ function DataMsg:Initialize()
   dataArray:AddField( NumericField:New("numBack", {min=0, max=2}) )
   self.handler:AddField( dataArray )
   self.handler:Finalize() 
-  self.handler:OnData( xxx ) 
-
+  self.handler:OnData( self:OnIncomingMsg ) 
   return self
 end
 
 function DataMsg:StartQueue() 
   -- start callLater for send 
-  self.queue = zo_callLater( self.OnQueue, self.queueDuration )   
+  self.queue = zo_callLater( self.EndQueue, self.queueDuration )   
 end
 
 function DataMsg:UpdateQueue() 
   zo_removeCallLater( self.queue ) 
-  self.queue = zo_callLater( self.OnQueue, self.queueDuration )
+  self.queue = zo_callLater( self.EndQueue, self.queueDuration )
 end
 
-function DataMsg:OnQueue() 
+function DataMsg:EndQueue() 
   local data = self:SerilizeData(self.buffer) 
   self.handler:Send( data ) 
   self:CleanQueue() 
 end
 
 function DataMsg:CleanQueue() 
-  self.buffer = {} 
-  self.queue = nil  
+  self.buffer = {}  -- reset buffer for data transmission
+  self.queue = nil  -- delete entry of callLater id 
 end
 
 function DataMsg:AddToQueue(setId, setData ) 
@@ -454,46 +517,45 @@ function DataMsg:AddToQueue(setId, setData )
   self.buffer[setId] = setData
 end
 
-
 function DataMsg:SendCurrentSetup() 
-  local currentSetup -- request current setup 
-  local data = self:SerilizeData() 
+  local currentSetup -- request current setup
+  local data = self:SerilizeData( currentSetup ) 
   self.handler:Send( data ) 
-  -- 
 end
 
-function DataMsg:SerilizeData( rawData ) 
-  local data = {}
-  for setId, setData in pairs(self.buffer) do 
-    table.insert(data, {
+function DataMsg:SerilizeData( data ) 
+  -- format data for data broadcast
+  local formattedData = {}
+  for setId, setData in pairs( data ) do 
+    table.insert(formattedData, {
       setId = setId, 
       numBody = setData.numBody, 
       numFront = setData.numFront, 
       numBack = setData.numBack,
     }
   end
-  return data 
+  return formattedData
 end
 
-function DataMsg:ReceiveData(unitTag, data) 
-  
-  local charName = GetUnitName("unitTag")
-  if GetUnitName("player") == charName then 
-    return --- detected msg send by myself (ToDo)
-  end
-
-  -- format data
-  local formattedData = {}
-  for _, setData in ipairs(data) do 
-    formattedData[setData.setId] = {
+function DataMsg:DeserilizeData( rawData ) 
+  local data 
+  for _, setData in ipairs(rawData) do 
+    data[setData.setId] = {
       ["numBody"] = setData.numBody, 
       ["numFront"] = setData.numFront, 
       ["numBack"] = setData.numBack, 
     }
-  end 
+  end  
+  return data
+end
 
+function DataMsg:OnIncomingMsg(unitTag, rawData) 
+  local charName = GetUnitName("unitTag")
+  if GetUnitName("player") == charName then 
+    return --- detected msg send by myself (ToDo)
+  end
+  local data = self:DeserilizeData(rawData)
   --- send data to group/set manager api 
-  
 end
 
 --[[ -- End of DataMsg -- ]]
@@ -502,7 +564,6 @@ end
 
 function BroadcastManager.Initialize() 
   BroadcastManager.LGB = LibGroupBroadcast 
-
   BroadcastManager.DataMsg = DataMsg:Inialize() 
 end
 
@@ -514,37 +575,56 @@ end
 
 
 
---[[ ------------------- ]]
---[[ -- Queue Manager -- ]]
+--[[ ---------------- ]]
+--[[ -- ZOS Events -- ]]
+--[[ ---------------- ]]
+
+local function OnSlotUpdate(_, _, slotId, _, _, _) 
+  SetDetector.UpdateSlot(slotId)
+end
+
+local function OnArmoryOperation() 
+  zo_callLater( function() SetDetector.UpdateAllSlots() end, 1000)
+end
+
+local function OnInitialPlayerActivated() 
+  --- ScanSetup 
+  SetDetector.UpdateAllSlots()
+  EM:UnregisterForEvent( libName .."PlayerActivated", EVENT_PLAYER_ACTIVATED)
+end
+
+--[[ -------------------- ]]
+--[[ -- Initialization -- ]]
+--[[ -------------------- ]]
+
+local function Initialize() 
+  local defaults = {
+    ["debug"] = false, 
+  }
+  SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
+
+  SetDetector.Inialize() 
+  BroadcastManager.Initalize() 
+
+  --- Register Events 
+  EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, SetDetector.OnSlotUpdate )
+  EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_BAG_ID, BAG_WORN)
+  EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_IS_NEW_ITEM, false)
+  EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_INVENTORY_UPDATE_REASON , INVENTORY_UPDATE_REASON_DEFAULT)
+  EM:RegisterForEvent( libName.."PlayerActivated", EVENT_PLAYER_ACTIVATED, SetDetector.OnInitialPlayerActivated )
+  EM:RegisterForEvent( libName.."ArmoryChange", EVENT_ARMORY_BUILD_OPERATION_STARTED, SetDetector.OnArmoryOperation )
+end
 
 
--- keeping track of callLater ids
-
--- application:  wait for slot updates 
--- wait for setUpdates 
---- are those two things actually different? 
---- cuz there can only be a set update if there is a slot update 
-
--- maybe hook functions in wizzard, dressing room etc to reduce waiting time 
--- start with simple queue 
-
---- queue for setChanges can be short 
---- but collect data for broadcast (like wait 5sec or something?! )
-
---- keep those values easy accessable for further tuning 
+local function OnAddonLoaded(_, name) 
+  if name == libName then 
+    Initialize() 
+    EM:UnregisterForEvent( libName, EVENT_ADD_ON_LOADED)
+  end
+end
 
 
---[[ -- SetDetector -- ]]
-
--- account for the possibility, that somebody switches back and forth, 
--- so check, if something actually changed before fireing callbacks 
-
---- perfected sets 
--- rethink current approach, to reduce everything to non perfected Id 
--- keep track of actual id's 
--- in post processing handle perfect and non-perfected sets 
-
--- decide, if SetDetector 
+EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 
 
 
@@ -1159,16 +1239,7 @@ function SetDetector.Initialize()
   if SV.enableDataShare then 
     InitializeMsgHandler()
   end
-
-  --- Define Debug
-  debugMsg = function(msg, dType) 
-    if LibExoY then 
-      LibExoY.Debug(dType, chatDebug, libName, msg)  
-    else 
-      d(msg)
-    end
-  end 
-
+  
   --- Initialize Tables
     for slotId, _ in pairs( equipSlotList ) do
       mapSlotSet[slotId] = 0
