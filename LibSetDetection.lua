@@ -28,9 +28,14 @@ local SV
 --[[ -- Entities -- ]]
 --[[ -------------- ]]
  
-local CallbackManager = {} --CM 
+local CallbackManager = {}  -- CM 
 local BroadcastManager = {} -- BM
-local SetDetector =  {} -- SM
+local SetDetector = {}      -- SD 
+local PlayerSets = {}       -- PS
+local GroupSets = {}        -- GS
+local GroupManager = {}     -- GM
+
+local SlotManager = {}      -- SM       
 
 --[[ ------------------- ]]
 --[[ -- Lookup Tables -- ]]
@@ -359,51 +364,51 @@ end
 
 
 
---[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ----------------- %% ]]
---[[ %% -- Set Manager -- %% ]]
---[[ %% ----------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------ %% ]]
+--[[ %% -- Set Detector -- %% ]]
+--[[ %% ------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 
-SetManager.__index = SetManager 
+SetDetector.__index = SetDetector 
 
-function SetManager:New() 
+function SetDetector:New() 
   self.
   self.data -- current datqa 
   self.reference = self:InitReference()  -- last setup to determine changes 
 end
 
 
-function SetManager:InitReference() 
+function SetDetector:InitReference() 
   local reference = {
     ["data"] = {}, 
   }
   return reference
 end
 
-function SetManager:GetTemplate() 
+function SetDetector:GetTemplate() 
 
 end
 
 
-function SetManager:HandlePerfectedSet() 
+function SetDetector:HandlePerfectedSet() 
 
 end
 
 
-function SetManager:AnalyseData() 
+function SetDetector:AnalyseData() 
 
 end
 
 
-function SetManager:DetermineChanges() 
+function SetDetector:DetermineChanges() 
   -- try the _eq thing, moony showed me
 
   -- do this after AnalyseData on all aspects 
 
 end
 
-function SetManager:UpdateData( newData )
+function SetDetector:UpdateData( newData )
   -- clear reference 
   -- safe current state as reference  
   -- write new data to data 
@@ -415,12 +420,12 @@ function SetManager:UpdateData( newData )
 end
 
 
-function SetManager:FinishedUpdatingData() 
+function SetDetector:FinishedUpdatingData() 
   -- send data to callback manager or broadcast 
 end
 
 
-PlayerSets = SetManager:New("player") 
+PlayerSets = SetDetector:New("player") 
 
 
 
@@ -437,96 +442,11 @@ GroupSets[charName] = SetManager:New("group")
 -- communication with broadcast manager to wake up, go dormant 
 
 
-
---[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ------------------ %% ]]
---[[ %% -- Set Detector -- %% ]]
---[[ %% ------------------ %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
-
---[[ IDEA ]]
-
---[[
-* make a class for one unit (this can be player or group member) 
-* contains function for analysis of setup, determining changes etc 
-* attribut for player or group, to select correct callbacks/broadcast 
-* or do it by name?! 
-* 
-
-
-
-
-
-]]
-
-
---[[ ----- ]]
-
-
---------
-
---- initialize set detector 
-
-SetDetector.equippedSets = { ["player"]={}, ["group"]={} }
-
-function SetDetector.Initialize() 
-  for slotId, _ in pairs( equipSlotList ) do 
-      equippedSet[slotId] = 0
-  end
-end
-
---[[ -- Player Sets -- ]]
-function SetDetector.UpdateSlot( slotId )
-  local setList = SetDetector.equippedSets.player
-  -- keeping track, which slot has which set
-  setList[slotId] = GetSetIdBySlotId(slotId)
-  -- if two-handers, assigns setId of main-hand to off-hand  
-  if IsWeaponSlot( slotId ) then
-    setList[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId( EQUIP_SLOT_OFF_HAND )
-    setList[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId( EQUIP_SLOT_BACKUP_OFF )
-    if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
-      setList[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId(EQUIP_SLOT_MAIN_HAND)
-    end
-    if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
-      setList[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId(EQUIP_SLOT_BACKUP_MAIN)
-    end
-  end
-  --- continue processing
-end
-
-function SetDetector.UpdateAllSlots() 
-  for slotId, _ in pairs( equipSlotList ) do 
-    SetDetector.UpdateSlot( slotId )    
-  end 
-end
-
-function SetDetector.QueueAnalysis() --- only for player, group already has enough queue upto this point 
-  if SetDetector.queue then 
-    zo_removeCallLater( SetDetector.queue ) 
-  end
-  SetDetector.queue = zo_callLater( 
-    function() 
-      SetDetector.queue = nil 
-      SetDetector.AnalyseSetup() 
-    end, 1000)
-end
-
-
-function SetDetector.AnalyseSetup() --- for group and player
-  -- input is table with entry for each setId 
-  -- with numBody, numFront and numBack 
-
-  -- determine 
-end
-
--- determine which sets are equipped/ unequipped 
--- determine what has changed 
-
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ---------------------- %% ]]
 --[[ %% -- BroadcastManager -- %% ]]
 --[[ %% ---------------------- %% ]]
-
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 --- ToDo-List 
 -- Save variables for toggle 
@@ -552,6 +472,7 @@ end
 
 --[[ -------------- ]]
 --[[ -- Data Msg -- ]]
+--[[ -------------- ]]
 
 local DataMsg = {} 
 function DataMsg:Initialize() 
@@ -638,6 +559,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   --- send data to group/set manager api 
 end
 
+--[[ -------------------- ]]
 --[[ -- End of DataMsg -- ]]
 --[[ -------------------- ]]
 
@@ -647,12 +569,69 @@ function BroadcastManager.Initialize()
   BroadcastManager.DataMsg = DataMsg:Inialize() 
 end
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------ %% ]]
+--[[ %% -- Slot Manager -- %% ]]
+--[[ %% ------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%% ]] 
 
---[[ %% ----------------------------- %% ]]
---[[ %% -- End of BroadcastManager -- %% ]]
---[[ %% ----------------------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+function SlotManager:Initialize() 
+  self.equippedSets = {} 
+  for slotId, _ in pairs( equipSlotList ) do 
+    self.equippedSets[slotId] = 0 
+  end
+  self.waitTime = 1000 --- ToDo add setting for advanced user ? 
+  self.pauseTransmission = false
+end
+
+
+function SlotManager:UpdateSlot() 
+  -- keeping track, which slot has which set
+  self.equippedSets[slotId] = GetSetIdBySlotId(slotId)
+  -- if two-handers, assigns setId of main-hand to off-hand  
+  if IsWeaponSlot( slotId ) then
+    self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId( EQUIP_SLOT_OFF_HAND )
+    self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId( EQUIP_SLOT_BACKUP_OFF )
+    if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
+      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId(EQUIP_SLOT_MAIN_HAND)
+    end
+    if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
+      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId(EQUIP_SLOT_BACKUP_MAIN)
+    end
+  end
+  if not self.pauseTransmission then self:QueueTransmission() end --- ToDo SendData with queue
+end
+
+
+function SlotManager:QueueTransmission() 
+  zo_removeCallLater( self.queue ) 
+  self.queue = zo_callLater( self:TransmitData, self.waitTime)
+end
+
+
+function SlotManager:UpdateAllSlots() 
+  self.pauseTransmission = true
+  for slotId, _ in pairs (equipSlotList) do 
+    self:UpdateSlot( slotId ) 
+  end 
+  self.pauseTransmission = false 
+  self:TransmitData() 
+end
+
+
+function SlotManager:TransmitData() 
+  local data = {} 
+  for barName, _ in pairs(barList) do  -- body, front, back 
+    for slotId, _ in pairs( slotList[barName]) do 
+      local setId = self.equippedSets[slotId] 
+      data[setId] = data[setId] or { ["body"]=0, ["front"]=0, ["back"]=0} 
+      data[setId][barName] = data[setId][barName] + 1
+    end
+  end
+  self.queue = nil 
+  PlayerSets:UpdateData( data ) 
+end   -- End of SendData
 
 
 --[[ ---------------- ]]
@@ -660,17 +639,16 @@ end
 --[[ ---------------- ]]
 
 local function OnSlotUpdate(_, _, slotId, _, _, _) 
-  SetDetector.UpdateSlot(slotId)
+  SlotManager:UpdateSlot(slotId)
 end
 
 local function OnArmoryOperation() 
-  zo_callLater( function() SetDetector.UpdateAllSlots() end, 1000)
+  zo_callLater( function() SlotManager:UpdateAllSlots() end, 1000)
 end
 
 local function OnInitialPlayerActivated() 
-  --- ScanSetup 
-  SetDetector.UpdateAllSlots()
   EM:UnregisterForEvent( libName .."PlayerActivated", EVENT_PLAYER_ACTIVATED)
+  SlotManager:UpdateAllSlots()
 end
 
 --[[ -------------------- ]]
@@ -683,7 +661,8 @@ local function Initialize()
   }
   SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
 
-  SetDetector.Inialize() 
+  SlotManager.Initialize() 
+  SetDetector.Initialize() 
   BroadcastManager.Initalize() 
 
   --- Register Events 
@@ -702,7 +681,6 @@ local function OnAddonLoaded(_, name)
     EM:UnregisterForEvent( libName, EVENT_ADD_ON_LOADED)
   end
 end
-
 
 EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 
