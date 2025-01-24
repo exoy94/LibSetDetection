@@ -40,6 +40,14 @@
 --- the events should always fire after all internal tables are updated 
 --- so make sure to fire all events at the end of the analysis, not during 
 
+--- exposed helping functions for addon devs, to determine SetIds: 
+GetSetIdForSlot( slotId or slotName according to slotList )
+GetSetIdByName( name substring ) -- depends on language 
+--iterate over all existing sets and compare setName with str 
+OutputEquippedSet( optional slotName or slotId ) --- outputs 
+-- slotName(slotId): setName (setId) 
+
+
 EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
 *action*: 0 = unequip, 1 = equip, 2 = activityChange 
 
