@@ -2,6 +2,8 @@
 --[[ -- ToDo / Notes  -- ]]
 --[[ ------------------- ]]
 
+--- check if the setId is provided when the mystical is equipped, that disables all set effects 
+
 -- debugVar definition
 -- setId threshold? 
 -- think about error codes
@@ -13,10 +15,76 @@
 --- 2. then outline function 
 --- 3. then programm them step by step
 
+--- function to get setId by setName for development  (string search with upper limit) 
+
+--- maybe add an determine changes in the SlotManger .... happens often to me, that I switch back and forth between two pieces. 
+--- if this happens the lib should not do anything else 
+--[[ 
+  * so a table of the new setup, which is constantly updated with any slot update and compared to the current setup 
+  * if something goes back, it will be removed again from that list 
+  * so any further actions will only be done, if the table is not empty at the time of the "Transmission Call"
+  * this should happen independently of update all or update non 
+  * this means i need to make sure the lib initializes correctly. because there is a case, where I have nothing equipped. 
+  * so the actual setup is identical to the template setup 
+  * I probably need a proper initialization procedure anyways, cause I need to estables the state of the data share anyways 
+]]
+
 
 --- entities (CallbackManager, SetDetector, DataShare, Queue? )
 -- define entities at the beginning 
 -- use local tables within the entities, but access them through the entitty 
+
+
+--[[ Start Diskussion - What Info Do I provide to user?! ]]
+
+--- the events should always fire after all internal tables are updated 
+--- so make sure to fire all events at the end of the analysis, not during 
+
+EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
+*action*: 0 = unequip, 1 = equip, 2 = activityChange 
+
+EventDataUpdate( newData, diffData )
+both data are probably just going to be the *setData* table
+([setId] = {numBody, numFront, numBack} )
+-- anything more specific put limitations on the use message 
+
+-- triggers, if any data change. This includes the changes by EventSetChange 
+-- but also includes changes in the setup that do not result in an EventSetChange 
+--- intented for addons which keep track of more things, e.g. "has a meaningful" setup 
+
+ApiGetPlayerEquippedSetPieces( setId )
+returns numBody, numFront, numBack, max  
+--- maybe GetUnitSetPieces( setId, unitTag )
+
+returns either, the setData (in which case I can add a setId as an additional filter)
+or it returns just the list with slotId to setId 
+-- i currently tend towards the first option. it makes the information between player and 
+-- groupmember more consistant. the only meaningful application I see is a very detailed analysis 
+-- of the setup of the player (information for group member not available) 
+-- this would only be relevant with a very in depth analysis of the usefullness of a setup, 
+-- with the only example I can currently think of is, that you want to detect that for example you were 
+-- light armor on armor pieces and medium armor on jewlery and it should be the other way arround 
+--- not sure, if for this very specific case I just provide an additional api for the player 
+
+ApiGetUnitActiveSets( unitTag ) 
+returns tables with setIds for 
+activeOnBody, activeOnFront, activeOnBack   --- probably processing on the fly 
+
+ApiGetUnitEquippedSets( unitTag ) 
+returns tables with setIds for
+euippedOnBody, equippedOnFront, equippedOnBack --- probably processing on the fly
+
+--- for both functions above, make unitTag:nilable and then 
+--- provide data for everybody? 
+
+
+ApiHasUnitActiveSet( unitTag, setId  )
+unitTag:nillable for table? 
+setId = number of table 
+returns activeOnBody, activeOnFront, ActiveOnBack (table for setId and table for unitTag?)
+
+--[[ End Diskussion ]]
+
 
 LibSetDetection = LibSetDetection or {}
 local libName = "LibSetDetection"
@@ -36,6 +104,12 @@ local GroupSets = {}        -- GS
 local GroupManager = {}     -- GM
 
 local SlotManager = {}      -- SM       
+
+--[[ --------------- ]]
+--[[ -- Templates -- ]]
+--[[ --------------- ]]
+
+
 
 --[[ ------------------- ]]
 --[[ -- Lookup Tables -- ]]
@@ -372,18 +446,21 @@ end
 
 SetDetector.__index = SetDetector 
 
-function SetDetector:New() 
-  self.
-  self.data -- current datqa 
-  self.reference = self:InitReference()  -- last setup to determine changes 
+function SetDetector:New( unitType, initSetData )
+  -- unitType ("player" or "group") - different callbacks etc 
+  -- initSetData:nilable 
+
+  self.setData = initSetData or {}
+
+  self.archive = {}   -- last setup to determine changes 
 end
 
 
-function SetDetector:InitReference() 
-  local reference = {
-    ["data"] = {}, 
+function SetDetector:InitArchive() 
+  local archive = {
+    ["setData"] = {}, 
   }
-  return reference
+  return archive
 end
 
 function SetDetector:GetTemplate() 
@@ -392,23 +469,56 @@ end
 
 
 function SetDetector:HandlePerfectedSet() 
+  -- if you reach the final bonus with the perfected version,
+  -- the perfect version is equipped 
+  -- if you have the complete bonus with a combination of 
+  -- normal and perfected then the normal is equipped 
 
+  -- specific API to get an information about 
+  -- "is sax equipped, and you get "
+
+  --- there are some special cases, i need to watch out for
+  --- e.g. i have 3perf pieces body, 2 perf on front and 2 unperf on back 
+  
+  --- so my new idea: 
+  -- unperfected sets also accounts for perfect pieces in respect to the set being active 
+  -- should the number of set pieces be normal or normal plus perfect??? 
+
+  -- this means, the events for both sets are completely decoupled
+  -- this also means, events for the unperfected set also triggers, when I have only perfect equippe? 
+  --- I think it will only do those events, if at lease one unperfected set piece is equipped 
 end
 
 
 function SetDetector:AnalyseData() 
-
+  --- GetMaxEquipThreshold (that function would probably the place to add an overwrite for shattered fate?!) 
+  -- but it should probably not be a setting for the user, cuz different addons might have different use cases 
+  -- so i either make the decision for for this set and future set, that i overwrite the max equipped and determine 
+  -- the set as active as soon it hits the first threshold (how would I detect if more thresholds are reached and how would i inform the user? ) 
+  -- it will probably get to the point, where the addons interested in this must do at least some additional manual work, but I should aim for 
+  -- some way to at least address some way to be covered with the events, so addons need not constantly checking and all do the same thing 
+  --- maybe some extra api for sets with exceptions? -- maybe an additional variable provided by the setChange event "isSpecial" 
+  --- and then some API where you get additional information for a certain setId if it is special (the returned data could be unique for different special sets)
 end
 
 
 function SetDetector:DetermineChanges() 
+  -- compare 
   -- try the _eq thing, moony showed me
 
   -- do this after AnalyseData on all aspects 
+  -- need to decide, which things I am acutally checking 
+
+  -- also need to decide what i provide with the events 
+  -- maybe like current data and a diff Data 
+  --- create a diff data table, which is used to decide which events to call 
 
 end
 
 function SetDetector:UpdateData( newData )
+  self.archive = self:MoveCurrentDataToArchive() 
+  self.data = newData 
+  self:AnalyseData() 
   -- clear reference 
   -- safe current state as reference  
   -- write new data to data 
@@ -425,8 +535,6 @@ function SetDetector:FinishedUpdatingData()
 end
 
 
-PlayerSets = SetDetector:New("player") 
-
 
 
 
@@ -436,10 +544,18 @@ PlayerSets = SetDetector:New("player")
 --[[ %% ------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
-GroupSets[charName] = SetManager:New("group") 
- 
+GroupSets[charName] = SetManager:New("group")  --- This will be put in GroupSets 
+
+-- GroupManager activates/deactives functionality when a player is joining/leaving a group 
+-- or group members change 
+-- needs to make sure, companions do not cause any problems  
+-- will stand in direct contact with the broadcast manager to keep track of the state of things for group member 
+-- will initialize data clean up when group members leave or the player leaves a group all together 
+-- (even if somebody rejoints again, there could have been a set change in the mean time, so i always have to check anyways)
+
 -- knowing who has addon active 
 -- communication with broadcast manager to wake up, go dormant 
+-- providing a unitTag characterName map? 
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -625,7 +741,7 @@ function SlotManager:TransmitData()
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedSets[slotId] 
-      data[setId] = data[setId] or { ["body"]=0, ["front"]=0, ["back"]=0} 
+      data[setId] = data[setId] or { ["numBody"]=0, ["numFront"]=0, ["numBack"]=0 }
       data[setId][barName] = data[setId][barName] + 1
     end
   end
@@ -664,6 +780,8 @@ local function Initialize()
   SlotManager.Initialize() 
   SetDetector.Initialize() 
   BroadcastManager.Initalize() 
+
+  PlayerSets = SetDetector:New("player") 
 
   --- Register Events 
   EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, SetDetector.OnSlotUpdate )
