@@ -29,6 +29,8 @@
   * I probably need a proper initialization procedure anyways, cause I need to estables the state of the data share anyways 
 ]]
 
+--- anstelle von "data[setId] = numBody" -> numEquip[setId] = body
+
 
 --- entities (CallbackManager, SetDetector, DataShare, Queue? )
 -- define entities at the beginning 
@@ -114,6 +116,7 @@ local GroupSets = {}        -- GS
 local GroupManager = {}     -- GM
 
 local SlotManager = {}      -- SM       
+local Development = {}      -- Dev
 
 --[[ --------------- ]]
 --[[ -- Templates -- ]]
@@ -144,24 +147,24 @@ local barList = {
 
 local slotList = {
   ["body"] = {
-    [EQUIP_SLOT_HEAD] = "head",                   --  0
-    [EQUIP_SLOT_NECK] = "necklace",               --  1
-    [EQUIP_SLOT_CHEST] = "chest",                 --  2
-    [EQUIP_SLOT_SHOULDERS] = "shoulders",         --  3
-    [EQUIP_SLOT_WAIST] = "waist",                 --  6
-    [EQUIP_SLOT_LEGS] = "legs",                   --  8
-    [EQUIP_SLOT_FEET] = "feet",                   --  9
-    [EQUIP_SLOT_RING1] = "ring1",                 -- 11
-    [EQUIP_SLOT_RING2] = "ring2",                 -- 12
-    [EQUIP_SLOT_HAND] = "hand",                   -- 16
+    [EQUIP_SLOT_HEAD] = "Head",                   --  0
+    [EQUIP_SLOT_NECK] = "Necklace",               --  1
+    [EQUIP_SLOT_CHEST] = "Chest",                 --  2
+    [EQUIP_SLOT_SHOULDERS] = "Shoulders",         --  3
+    [EQUIP_SLOT_WAIST] = "Waist",                 --  6
+    [EQUIP_SLOT_LEGS] = "Legs",                   --  8
+    [EQUIP_SLOT_FEET] = "Feet",                   --  9
+    [EQUIP_SLOT_RING1] = "Ring1",                 -- 11
+    [EQUIP_SLOT_RING2] = "Ring2",                 -- 12
+    [EQUIP_SLOT_HAND] = "Hand",                   -- 16
   },
   ["front"] = {
-    [EQUIP_SLOT_MAIN_HAND] = "mainFront",         --  4
-    [EQUIP_SLOT_OFF_HAND] = "offFront",           --  5
+    [EQUIP_SLOT_MAIN_HAND] = "MainFront",         --  4
+    [EQUIP_SLOT_OFF_HAND] = "OffFront",           --  5
   },
   ["back"] = {
-    [EQUIP_SLOT_BACKUP_MAIN] = "mainBack",        -- 20
-    [EQUIP_SLOT_BACKUP_OFF] = "offBack",          -- 21
+    [EQUIP_SLOT_BACKUP_MAIN] = "MainBack",        -- 20
+    [EQUIP_SLOT_BACKUP_OFF] = "OffBack",          -- 21
   }
 }
 
@@ -169,14 +172,14 @@ local weaponSlotList = MergeSlotTables( slotList["front"], slotList["back"] )
 local equipSlotList = MergeSlotTables( slotList["body"], weaponSlotList )
 
 local twoHanderList = {
-  [WEAPONTYPE_TWO_HANDED_SWORD] = "greatsword",     --  4
-  [WEAPONTYPE_TWO_HANDED_AXE] = "battleaxe",        --  5
-  [WEAPONTYPE_TWO_HANDED_HAMMER] = "battlehammer",  --  6
-  [WEAPONTYPE_BOW] = "bow",                         --  8
-  [WEAPONTYPE_HEALING_STAFF] = "healingstaff",      --  9
-  [WEAPONTYPE_FIRE_STAFF] = "firestaff",            -- 12
-  [WEAPONTYPE_FROST_STAFF] = "froststaff",          -- 13
-  [WEAPONTYPE_LIGHTNING_STAFF] = "lightningstaff",  -- 15
+  [WEAPONTYPE_TWO_HANDED_SWORD] = "Greatsword",     --  4
+  [WEAPONTYPE_TWO_HANDED_AXE] = "Battleaxe",        --  5
+  [WEAPONTYPE_TWO_HANDED_HAMMER] = "Battlehammer",  --  6
+  [WEAPONTYPE_BOW] = "Bow",                         --  8
+  [WEAPONTYPE_HEALING_STAFF] = "Healingstaff",      --  9
+  [WEAPONTYPE_FIRE_STAFF] = "Firestaff",            -- 12
+  [WEAPONTYPE_FROST_STAFF] = "Froststaff",          -- 13
+  [WEAPONTYPE_LIGHTNING_STAFF] = "Lightningstaff",  -- 15
 }
 
 --[[ ------------------------------- ]]
@@ -610,7 +613,7 @@ function DataMsg:Initialize()
   dataArray:AddField( NumericField:New("numBack", {min=0, max=2}) )
   self.handler:AddField( dataArray )
   self.handler:Finalize() 
-  self.handler:OnData( self:OnIncomingMsg() ) 
+  self.handler:OnData( function() self:OnIncomingMsg() end ) 
   return self
 end
 
@@ -712,7 +715,7 @@ function SlotManager:Initialize()
 end
 
 
-function SlotManager:UpdateSlot() 
+function SlotManager:UpdateSlot( slotId ) 
   -- keeping track, which slot has which set
   self.equippedSets[slotId] = GetSetIdBySlotId(slotId)
   -- if two-handers, assigns setId of main-hand to off-hand  
@@ -731,8 +734,8 @@ end
 
 
 function SlotManager:QueueTransmission() 
-  zo_removeCallLater( self.queue ) 
-  self.queue = zo_callLater( self.TransmitData, self.waitTime)
+  if self.queue then zo_removeCallLater( self.queue ) end
+  self.queue = zo_callLater( function() self:TransmitData() end, self.waitTime)
 end
 
 
@@ -747,16 +750,17 @@ end
 
 
 function SlotManager:TransmitData() 
-  local data = {} 
+  local numEquip = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedSets[slotId] 
-      data[setId] = data[setId] or { ["numBody"]=0, ["numFront"]=0, ["numBack"]=0 }
-      data[setId][barName] = data[setId][barName] + 1
+      numEquip[setId] = numEquip[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
+      numEquip[setId][barName] = numEquip[setId][barName] + 1
     end
   end
   self.queue = nil 
-  PlayerSets:UpdateData( data ) 
+  d(numEquip)
+  --- PlayerSets:UpdateData( numEquip ) 
 end   -- End of SendData
 
 
@@ -773,13 +777,16 @@ local function OnArmoryOperation()
 end
 
 local function OnInitialPlayerActivated() 
-  EM:UnregisterForEvent( libName .."PlayerActivated", EVENT_PLAYER_ACTIVATED)
+  EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
   SlotManager:UpdateAllSlots()
 end
 
---[[ -------------------- ]]
---[[ -- Initialization -- ]]
---[[ -------------------- ]]
+
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% -------------------- %% ]]
+--[[ %% -- Initialization -- %% ]]
+--[[ %% -------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local function Initialize() 
   local defaults = {
@@ -793,14 +800,13 @@ local function Initialize()
   PlayerSets = SetDetector:New("player") 
 
   --- Register Events 
-  EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, SetDetector.OnSlotUpdate )
+  EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, OnSlotUpdate )
   EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_BAG_ID, BAG_WORN)
   EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_IS_NEW_ITEM, false)
   EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_INVENTORY_UPDATE_REASON , INVENTORY_UPDATE_REASON_DEFAULT)
-  EM:RegisterForEvent( libName.."PlayerActivated", EVENT_PLAYER_ACTIVATED, SetDetector.OnInitialPlayerActivated )
-  EM:RegisterForEvent( libName.."ArmoryChange", EVENT_ARMORY_BUILD_OPERATION_STARTED, SetDetector.OnArmoryOperation )
+  EM:RegisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED, OnInitialPlayerActivated )
+  EM:RegisterForEvent( libName.."ArmoryChange", EVENT_ARMORY_BUILD_OPERATION_STARTED, OnArmoryOperation )
 end
-
 
 local function OnAddonLoaded(_, name) 
   if name == libName then 
@@ -812,9 +818,11 @@ end
 EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 
 
---[[ ------------------- ]]
---[[ -- For Developer -- ]]
---[[ ------------------- ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %% -- Exposed Functions -- %% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
   local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
@@ -822,23 +830,73 @@ function LibSetDetection.GetSetIdFromItemLink( itemlink )
 end
 
 
-SLASH_COMMANDS["/libsd"] = function( cmd ) 
+--[[ ------------------- ]]
+--[[ -- Chat Command  -- ]]
+--[[ ------------------- ]]
+
+SLASH_COMMANDS["/lsd"] = function( input ) 
 
   local cmdList = {
-    ["equipped"] = "Output list of equipped sets"
+    ["equip"] = "output list of equipped sets",
+    ["setid"] = "outputs id of all sets, that include search string",
   }
 
-  if cmd == ""  then 
-    -- output cmdList 
-  elseif cmd == "equipped" then 
-    for barName, barList in pairs( slotList ) do 
-      for slotId, slotName in pairs( barList ) do 
-        local setId = GetSetIdBySlotId( slotId )
-        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetNameBySetId(setId) , setId ) )
-      end
-    end
-  else 
-    d("unknown command")
+  --deserializ input 
+  input = string.lower(input) 
+  local param = {}
+  for str in string.gmatch(input, "%S+") do
+    table.insert(param, str)
   end
 
+  local cmd = table.remove(param, 1) 
+  if cmd == ""  then 
+    d("[LibSetDetection] - command overview")
+    for cmdName, cmdInfo in pairs( cmdList ) do 
+      d( zo_strformat("<<1>> - <<2>>", cmdName, cmdInfo) )
+    end
+    d("--------------------")
+  elseif cmd == "equip" then 
+    local OutputSets = function(barName) 
+      d("--- "..barName.." --- ")
+      for slotId, slotName in pairs( slotList[string.lower(barName)] ) do 
+        local setId = GetSetIdBySlotId( slotId )
+        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetNameBySetId(setId) , setId ) )
+      end  
+    end
+    d("[LibSetDetection] equipped sets:")
+    OutputSets("Body") 
+    OutputSets("Front") 
+    OutputSets("Back")
+    d("--------------------")
+  elseif cmd == "setid" then
+    if IsString(param[1]) and param[1] ~= "" then 
+      d("[LibSetDetection] matching set ids:")
+      for i=0,1023,1 do 
+        local setName = GetSetNameBySetId(i)
+        if string.find( string.lower(setName), string.lower(param[2]) ) then 
+          d( zo_strformat("<<1>> - <<2>>", i, setName))
+        end
+      end
+      d("--------------------")
+    else 
+      d("[LibSetDetection] search string is missing ")
+    end
+  else 
+    if cmd == "dev" then 
+      -- call development functions 
+      Development.OutputEquippedSets()    
+    else 
+      d("[LibSetDetection] command unknown")
+    end
+  end
+
+end
+
+
+--[[ --------------------------- ]]
+--[[ -- Development Functions -- ]]
+--[[ --------------------------- ]]
+
+function Development.OutputEquippedSets() 
+  d(SlotManager.equippedSets)
 end
