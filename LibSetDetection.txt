@@ -6,6 +6,5 @@
 ## IsLibrary: true
 ## Description: Detects the equipped sets and provides callbacks for any changes.
 ## SavedVariables: LibSetDetectionSV
-## OptionalDependsOn: LibExoYsUtilities ExoYsDevelopmentTool
 
 LibSetDetection.lua
