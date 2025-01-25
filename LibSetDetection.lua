@@ -41,6 +41,8 @@
 --- so make sure to fire all events at the end of the analysis, not during 
 
 --- exposed helping functions for addon devs, to determine SetIds: 
+
+--[[
 GetSetIdForSlot( slotId or slotName according to slotList )
 GetSetIdByName( name substring ) -- depends on language 
 --iterate over all existing sets and compare setName with str 
@@ -91,7 +93,7 @@ unitTag:nillable for table?
 setId = number of table 
 returns activeOnBody, activeOnFront, ActiveOnBack (table for setId and table for unitTag?)
 
---[[ End Diskussion ]]
+End Diskussion ]]
 
 
 LibSetDetection = LibSetDetection or {}
@@ -163,8 +165,8 @@ local slotList = {
   }
 }
 
-local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
-local equipSlotList = MergeTables( slotList["body"], weaponSlotList )
+local weaponSlotList = MergeSlotTables( slotList["front"], slotList["back"] )
+local equipSlotList = MergeSlotTables( slotList["body"], weaponSlotList )
 
 local twoHanderList = {
   [WEAPONTYPE_TWO_HANDED_SWORD] = "greatsword",     --  4
@@ -231,7 +233,7 @@ end
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
-debugMsg = function( msg,  ) 
+debugMsg = function( msg ) 
   if not SV.debug then return end
   d( zo_strformat("[<<1>>-LSD] <<2>>", GetTimeString(), msg) )
 end
@@ -530,7 +532,7 @@ function SetDetector:UpdateData( newData )
   -- clear reference 
   -- safe current state as reference  
   -- write new data to data 
-  for setId, setData in ipairs( newData ) 
+  for setId, setData in ipairs( newData ) do
     data[setId] = data 
   end
 
@@ -552,7 +554,7 @@ end
 --[[ %% ------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
-GroupSets[charName] = SetManager:New("group")  --- This will be put in GroupSets 
+--GroupSets[charName] = SetManager:New("group")  --- This will be put in GroupSets 
 
 -- GroupManager activates/deactives functionality when a player is joining/leaving a group 
 -- or group members change 
@@ -608,7 +610,7 @@ function DataMsg:Initialize()
   dataArray:AddField( NumericField:New("numBack", {min=0, max=2}) )
   self.handler:AddField( dataArray )
   self.handler:Finalize() 
-  self.handler:OnData( self:OnIncomingMsg ) 
+  self.handler:OnData( self:OnIncomingMsg() ) 
   return self
 end
 
@@ -657,7 +659,7 @@ function DataMsg:SerilizeData( data )
       numBody = setData.numBody, 
       numFront = setData.numFront, 
       numBack = setData.numBack,
-    }
+    } )
   end
   return formattedData
 end
@@ -689,8 +691,8 @@ end
 
 
 function BroadcastManager.Initialize() 
-  BroadcastManager.LGB = LibGroupBroadcast 
-  BroadcastManager.DataMsg = DataMsg:Inialize() 
+  -- BroadcastManager.LGB = LibGroupBroadcast 
+  -- BroadcastManager.DataMsg = DataMsg:Inialize() 
 end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -730,7 +732,7 @@ end
 
 function SlotManager:QueueTransmission() 
   zo_removeCallLater( self.queue ) 
-  self.queue = zo_callLater( self:TransmitData, self.waitTime)
+  self.queue = zo_callLater( self.TransmitData, self.waitTime)
 end
 
 
@@ -785,9 +787,8 @@ local function Initialize()
   }
   SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
 
-  SlotManager.Initialize() 
-  SetDetector.Initialize() 
-  BroadcastManager.Initalize() 
+  SlotManager:Initialize() 
+  BroadcastManager.Initialize() 
 
   PlayerSets = SetDetector:New("player") 
 
