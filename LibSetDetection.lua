@@ -31,26 +31,12 @@
 
 --- anstelle von "data[setId] = numBody" -> numEquip[setId] = body
 
-
---- entities (CallbackManager, SetDetector, DataShare, Queue? )
--- define entities at the beginning 
--- use local tables within the entities, but access them through the entitty 
-
-
 --[[ Start Diskussion - What Info Do I provide to user?! ]]
 
 --- the events should always fire after all internal tables are updated 
 --- so make sure to fire all events at the end of the analysis, not during 
 
---- exposed helping functions for addon devs, to determine SetIds: 
-
 --[[
-GetSetIdForSlot( slotId or slotName according to slotList )
-GetSetIdByName( name substring ) -- depends on language 
---iterate over all existing sets and compare setName with str 
-OutputEquippedSet( optional slotName or slotId ) --- outputs 
--- slotName(slotId): setName (setId) 
-
 
 EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
 *action*: 0 = unequip, 1 = equip, 2 = activityChange 
@@ -64,9 +50,6 @@ both data are probably just going to be the *setData* table
 -- but also includes changes in the setup that do not result in an EventSetChange 
 --- intented for addons which keep track of more things, e.g. "has a meaningful" setup 
 
-ApiGetPlayerEquippedSetPieces( setId )
-returns numBody, numFront, numBack, max  
---- maybe GetUnitSetPieces( setId, unitTag )
 
 returns either, the setData (in which case I can add a setId as an additional filter)
 or it returns just the list with slotId to setId 
@@ -78,24 +61,8 @@ or it returns just the list with slotId to setId
 -- light armor on armor pieces and medium armor on jewlery and it should be the other way arround 
 --- not sure, if for this very specific case I just provide an additional api for the player 
 
-ApiGetUnitActiveSets( unitTag ) 
-returns tables with setIds for 
-activeOnBody, activeOnFront, activeOnBack   --- probably processing on the fly 
 
-ApiGetUnitEquippedSets( unitTag ) 
-returns tables with setIds for
-euippedOnBody, equippedOnFront, equippedOnBack --- probably processing on the fly
-
---- for both functions above, make unitTag:nilable and then 
---- provide data for everybody? 
-
-
-ApiHasUnitActiveSet( unitTag, setId  )
-unitTag:nillable for table? 
-setId = number of table 
-returns activeOnBody, activeOnFront, ActiveOnBack (table for setId and table for unitTag?)
-
-End Diskussion ]]
+]]
 
 
 LibSetDetection = LibSetDetection or {}
@@ -206,7 +173,7 @@ end
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
 
-local function GetSetIdBySlotId( slotId )
+local function GetSetId( slotId )
   local _, _, _, _, _, setId = GetItemLinkSetInfo( GetItemLink(BAG_WORN, slotId) )
   return setId
 end
@@ -220,16 +187,19 @@ local function IsTwoHander( slotId )
   return twoHanderList[weaponType] ~= nil
 end
 
-local function GetSetNameBySetId( setId ) 
+local function GetSetName( setId ) 
   local _, setName = GetItemSetInfo( setId )
   return setName
 end 
 
-local function GetMaxEquipBySetId( setId )
+local function GetMaxEquip( setId )
+  --- overwrite for special sets
+  local specialSets = {
+    [731] = 5, --shattered fate
+  }
   local _, _, _, _, _, maxEquip = GetItemSetInfo( setId )
-  return maxEquip
+  return specialSets[setId] or maxEquip
 end
-
 
 
 --[[ ----------- ]]
@@ -422,30 +392,6 @@ function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)
   end
 end   -- End of FireCallbacks
 
-
-
---- Exposed Functions for Registration/Unregistration 
-
--- user input: unitType, id, callback, {setIds} - optional
-function LibSetDetection.RegisterForSetChange( ... )
-  return CallbackManager.HandleRegistrations( true, "SetChange", ...)
-end
-
--- user input: unitType, id, callback
-function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
-end
-
--- user input: unitType, id, callback, {setIds} - (optional)
-function LibSetDetection.UnregisterSetChange( ... ) 
-  return CallbackManager.HandleRegistrations( false, "SetChange", ...)
-end
-
--- user input: unitType, id, callback
-function LibSetDetection.UnregisterDataUpdate( ... ) 
-  return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
-end
-
 --[[ End of CallbackManager ]]
 
 
@@ -503,7 +449,22 @@ function SetDetector:HandlePerfectedSet()
 end
 
 
-function SetDetector:AnalyseData() 
+function SetDetector:AnalyseData()
+  self.active = {}
+  for setId, numEquip in pairs(self.numEquip) do 
+    local numFront = numEquip["body"] + numEquip["front"] 
+    local numBack = numEquip["body"] + numEquip["back"] 
+    local maxEquip = GetMaxEquip(setId)
+    --- account for special sets and unperfected/perfected
+    -- if it has a normal/perf version 
+
+    ---
+    active["front"] = numFront > maxEquip
+    active["back"] = numBack > maxEquip
+    active["body"] = numEquip["body"] > maxEquip
+    self.active[setId] = active 
+  end
+  
   --- GetMaxEquipThreshold (that function would probably the place to add an overwrite for shattered fate?!) 
   -- but it should probably not be a setting for the user, cuz different addons might have different use cases 
   -- so i either make the decision for for this set and future set, that i overwrite the max equipped and determine 
@@ -525,21 +486,22 @@ function SetDetector:DetermineChanges()
   -- also need to decide what i provide with the events 
   -- maybe like current data and a diff Data 
   --- create a diff data table, which is used to decide which events to call 
-
 end
 
-function SetDetector:UpdateData( newData )
-  self.archive = self:MoveCurrentDataToArchive() 
-  self.data = newData 
-  self:AnalyseData() 
-  -- clear reference 
-  -- safe current state as reference  
-  -- write new data to data 
-  for setId, setData in ipairs( newData ) do
-    data[setId] = data 
+
+function SetDetector:UpdateArchive() 
+  self.archive = nil 
+  self.archive["numEquip"] = self.numEquip
+  self.archive["active"] = self.active
+end
+
+
+function SetDetector:UpdateData( numEquipUpdate )
+  self:MoveCurrentDataToArchive() 
+  for setId, numEquip in pairs(numEquipUpdate) do 
+    self.numEquip[setId] = numEquip
   end
-
-
+  self:AnalyseData() 
 end
 
 
@@ -597,13 +559,17 @@ end
   -- function to convert player data to send data 
   -- api for information about group 
 
+  local DataMsg = {} 
+  function BroadcastManager.Initialize() 
+    -- BroadcastManager.LGB = LibGroupBroadcast 
+    -- BroadcastManager.DataMsg = DataMsg:Inialize() 
+  end
 
 
 --[[ -------------- ]]
 --[[ -- Data Msg -- ]]
 --[[ -------------- ]]
 
-local DataMsg = {} 
 function DataMsg:Initialize() 
   self.handler = BroadcastManager.LGB:DefineMessageHandler( 1, "LibSetDetection_Data" )
   local dataArray = StructuredArrayField:New( "SetData", {minSize = 1, maxSize = 8} )
@@ -693,11 +659,6 @@ end
 --[[ -------------------- ]]
 
 
-function BroadcastManager.Initialize() 
-  -- BroadcastManager.LGB = LibGroupBroadcast 
-  -- BroadcastManager.DataMsg = DataMsg:Inialize() 
-end
-
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
 --[[ %% -- Slot Manager -- %% ]]
@@ -717,16 +678,16 @@ end
 
 function SlotManager:UpdateSlot( slotId ) 
   -- keeping track, which slot has which set
-  self.equippedSets[slotId] = GetSetIdBySlotId(slotId)
+  self.equippedSets[slotId] = GetSetId(slotId)
   -- if two-handers, assigns setId of main-hand to off-hand  
   if IsWeaponSlot( slotId ) then
-    self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId( EQUIP_SLOT_OFF_HAND )
-    self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId( EQUIP_SLOT_BACKUP_OFF )
+    self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId( EQUIP_SLOT_OFF_HAND )
+    self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId( EQUIP_SLOT_BACKUP_OFF )
     if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
-      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetIdBySlotId(EQUIP_SLOT_MAIN_HAND)
+      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId(EQUIP_SLOT_MAIN_HAND)
     end
     if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
-      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetIdBySlotId(EQUIP_SLOT_BACKUP_MAIN)
+      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId(EQUIP_SLOT_BACKUP_MAIN)
     end
   end
   if not self.pauseTransmission then self:QueueTransmission() end --- ToDo SendData with queue
@@ -750,17 +711,16 @@ end
 
 
 function SlotManager:TransmitData() 
-  local numEquip = {} 
+  local numEquipUpdate = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedSets[slotId] 
-      numEquip[setId] = numEquip[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
-      numEquip[setId][barName] = numEquip[setId][barName] + 1
+      numEquipUpdate[setId] = numEquipUpdate[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
+      numEquipUpdate[setId][barName] = numEquipUpdate[setId][barName] + 1
     end
   end
   self.queue = nil 
-  d(numEquip)
-  --- PlayerSets:UpdateData( numEquip ) 
+  PlayerSets:UpdateData( numEquipUpdate ) 
 end   -- End of SendData
 
 
@@ -824,9 +784,57 @@ EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 --[[ %% ----------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+--- Utility
 function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
   local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
   return setId
+end
+
+--- for both functions above, make unitTag:nilable and then 
+--- provide data for everybody? 
+function LibSetDetection.GetUnitActiveSets( unitTag )  
+  -- returns tables with setIds for 
+  -- activeOnBody, activeOnFront, activeOnBack   --- probably processing on the fly 
+end 
+
+
+function LibSetDetection.GetUnitEquippedSets( unitTag ) 
+  -- returns tables with setIds for
+  -- euippedOnBody, equippedOnFront, equippedOnBack --- probably processing on the fly
+end
+
+
+function LibSetDetection.HasSomebodySet( setId, unitType ) 
+  -- check, if somebody in the group has a specific set 
+  -- unit: optional: 
+  -- if nil then check both types 
+end
+
+
+--- Exposed Functions of CallbackManager
+--- User Input: 
+--    1. unitType (string - case sensitive): "player" or "group" 
+--    2. id (string - case sensitive): unique name (for each registryType/unitType) 
+--    3. callback (function): called when appropriate callbacks fire
+--    4. filter:nilable (optional) - table of filter values 
+
+function LibSetDetection.RegisterForSetChange( ... )
+  return CallbackManager.HandleRegistrations( true, "SetChange", ...)
+end
+
+-- user input: unitType, id, callback
+function LibSetDetection.RegisterForDataUpdate( ... ) 
+  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
+end
+
+-- user input: unitType, id, callback, {setIds} - (optional)
+function LibSetDetection.UnregisterSetChange( ... ) 
+  return CallbackManager.HandleRegistrations( false, "SetChange", ...)
+end
+
+-- user input: unitType, id, callback
+function LibSetDetection.UnregisterDataUpdate( ... ) 
+  return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
 end
 
 
@@ -859,8 +867,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
     local OutputSets = function(barName) 
       d("--- "..barName.." --- ")
       for slotId, slotName in pairs( slotList[string.lower(barName)] ) do 
-        local setId = GetSetIdBySlotId( slotId )
-        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetNameBySetId(setId) , setId ) )
+        local setId = GetSetId( slotId )
+        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetName(setId) , setId ) )
       end  
     end
     d("[LibSetDetection] equipped sets:")
@@ -872,7 +880,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     if IsString(param[1]) and param[1] ~= "" then 
       d("[LibSetDetection] matching set ids:")
       for i=0,1023,1 do 
-        local setName = GetSetNameBySetId(i)
+        local setName = GetSetName(i)
         if string.find( string.lower(setName), string.lower(param[2]) ) then 
           d( zo_strformat("<<1>> - <<2>>", i, setName))
         end
