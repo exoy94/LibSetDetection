@@ -519,7 +519,23 @@ function SetDetector:UpdateData( numEquipUpdate, unitTag )
   end
   self:AnalyseData() 
   self:DetermineChanges() 
-  self:FireCallbacks() 
+  
+  d("numEquip")
+  d(self.numEquip)
+  d("-----")
+  d("numEquip Archive")
+  d(self.archive.numEquip)
+  d("-----")
+  d("active")
+  d(self.active)
+  d("----")
+  d("active Archive")
+  d(self.archive.active)
+  d("-----")
+  d("lastChanges")
+  d(self.lastChanges) 
+  d("=====")
+  --self:FireCallbacks() 
 end
 
 
