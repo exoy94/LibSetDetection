@@ -420,12 +420,12 @@ end   -- End of FireCallbacks
 
 SetDetector.__index = SetDetector 
 
-function SetDetector:New( unitType, initSetData )
-  -- unitType ("player" or "group") - different callbacks etc 
-  -- initSetData:nilable 
-
+function SetDetector:New( unitType, unitTag )
+  -- unitType ("player" or "group")
+  -- unitTag at the time of creation
   self.setData = initSetData or {}
-
+  self.unitType = unitType
+  self.unitTag = unitType == "player" and "player" or unitTag 
   self.archive = {}   -- last setup to determine changes 
 end
 
@@ -506,21 +506,22 @@ function SetDetector:UpdateArchive()
 end
 
 
-function SetDetector:UpdateData( numEquipUpdate )
+function SetDetector:UpdateData( numEquipUpdate, unitTag )
+  self.unitTag = unitTag
   self:MoveCurrentDataToArchive() 
   for setId, numEquip in pairs(numEquipUpdate) do 
     self.numEquip[setId] = numEquip
   end
   self:AnalyseData() 
   self:DetermineChanges() 
-  self:FireCallbacks() --- different for player and group 
+  self:FireCallbacks() 
 end
 
 
-function SetDetector:FireCallbacks() --- function for player 
+function SetDetector:FireCallbacks() 
   for setId, changeType in pairs(self.changes) do 
-    CallbackManager.FireCallbacks("SetChange", "player", nil, changeType, setId, "player", self.active["body"], self.active["front"], self.active["back"]) 
-    CallbackManager.FireCallbacks("SetChange", "player", setId, changeType, setId, "player", self.active["body"], self.active["front"], self.active["back"]) 
+    CallbackManager.FireCallbacks("SetChange", self.unitType, nil, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
+    CallbackManager.FireCallbacks("SetChange", self.unitType, setId, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
   end
   CallbackManager.FireCallbacks("DataUpdate", "player")
 end
