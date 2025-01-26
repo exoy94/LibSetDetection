@@ -61,7 +61,19 @@ or it returns just the list with slotId to setId
 -- light armor on armor pieces and medium armor on jewlery and it should be the other way arround 
 --- not sure, if for this very specific case I just provide an additional api for the player 
 
+--- GetMaxEquipThreshold (that function would probably the place to add an overwrite for shattered fate?!) 
+  -- but it should probably not be a setting for the user, cuz different addons might have different use cases 
+  -- so i either make the decision for for this set and future set, that i overwrite the max equipped and determine 
+  -- the set as active as soon it hits the first threshold (how would I detect if more thresholds are reached and how would i inform the user? ) 
+  -- it will probably get to the point, where the addons interested in this must do at least some additional manual work, but I should aim for 
+  -- some way to at least address some way to be covered with the events, so addons need not constantly checking and all do the same thing 
+  --- maybe some extra api for sets with exceptions? -- maybe an additional variable provided by the setChange event "isSpecial" 
+  --- and then some API where you get additional information for a certain setId if it is special (the returned data could be unique for different special sets)
 
+
+
+Search on ESOUI Source Code GetItemSetUnperfectedSetId(integer itemSetId)
+  Returns: integer unperfectedSetId 
 ]]
 
 
@@ -149,6 +161,20 @@ local twoHanderList = {
   [WEAPONTYPE_LIGHTNING_STAFF] = "Lightningstaff",  -- 15
 }
 
+--- result code definition for callback manager
+local CALLBACK_RESULT_SUCCESS = 0 
+local CALLBACK_RESULT_INVALID_CALLBACK = 1 
+local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
+local CALLBACK_RESULT_INVALID_FILTER = 3
+local CALLBACK_RESULT_INVALID_NAME = 4 
+local CALLBACK_RESULT_DUPLICATE_NAME = 5
+local CALLBACK_RESULT_UNKNOWN_NAME = 6
+
+--- change types for events (global) 
+LSD_CHANGETYPE_UNEQUIPPED = 1 
+LSD_CHANGETYPE_EQUIPPED = 2
+LSD_CHANGETYPE_UPDATE = 3
+
 --[[ ------------------------------- ]]
 --[[ -- Generic Utility Functions -- ]]
 --[[ ------------------------------- ]]
@@ -193,12 +219,8 @@ local function GetSetName( setId )
 end 
 
 local function GetMaxEquip( setId )
-  --- overwrite for special sets
-  local specialSets = {
-    [731] = 5, --shattered fate
-  }
   local _, _, _, _, _, maxEquip = GetItemSetInfo( setId )
-  return specialSets[setId] or maxEquip
+  return maxEquip
 end
 
 
@@ -224,14 +246,7 @@ end
 -- *id* (string - case sensitive): unique name (for each registryType/unitType) 
 -- *filter*:nilable (if *registryType = "SetChange", needs to be table of numbers (setIds) )
 
---- result code definition
-local CALLBACK_RESULT_SUCCESS = 0 
-local CALLBACK_RESULT_INVALID_CALLBACK = 1 
-local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
-local CALLBACK_RESULT_INVALID_FILTER = 3
-local CALLBACK_RESULT_INVALID_NAME = 4 
-local CALLBACK_RESULT_DUPLICATE_NAME = 5
-local CALLBACK_RESULT_UNKNOWN_NAME = 6
+
 
 CallbackManager.results = {
   [CALLBACK_RESULT_SUCCESS] = "success",
@@ -415,77 +430,72 @@ function SetDetector:New( unitType, initSetData )
 end
 
 
-function SetDetector:InitArchive() 
-  local archive = {
-    ["setData"] = {}, 
-  }
-  return archive
-end
-
-function SetDetector:GetTemplate() 
-
-end
-
-
-function SetDetector:HandlePerfectedSet() 
-  -- if you reach the final bonus with the perfected version,
-  -- the perfect version is equipped 
-  -- if you have the complete bonus with a combination of 
-  -- normal and perfected then the normal is equipped 
-
-  -- specific API to get an information about 
-  -- "is sax equipped, and you get "
-
-  --- there are some special cases, i need to watch out for
-  --- e.g. i have 3perf pieces body, 2 perf on front and 2 unperf on back 
-  
-  --- so my new idea: 
-  -- unperfected sets also accounts for perfect pieces in respect to the set being active 
-  -- should the number of set pieces be normal or normal plus perfect??? 
-
-  -- this means, the events for both sets are completely decoupled
-  -- this also means, events for the unperfected set also triggers, when I have only perfect equippe? 
-  --- I think it will only do those events, if at lease one unperfected set piece is equipped 
-end
-
-
 function SetDetector:AnalyseData()
   self.active = {}
+  --- handle perfect/unperfect
+  local numEquipTemp = {}
   for setId, numEquip in pairs(self.numEquip) do 
+    local unperfSetId = GetItemSetUnperfectedSetId(setId)
+    if unperfSetId ~= 0 then 
+      numEquipTemp[unperfSetId] = {}
+      for barName, _ in pairs(barList) do 
+        numEquipTemp[unperfSetId][barName] = numEquip[barName] + self.numEquip[unperfSetId] 
+      end
+    else 
+      -- making sure values for unperfected set are not overwritten
+      -- if it is done after the perfected
+      numEquipTemp[setId] = numEquipTemp[setId] or numEquip 
+    end
+  end
+  --- determine active sets
+  for setId, numEquip in pairs( numEquipTemp ) do   
     local numFront = numEquip["body"] + numEquip["front"] 
     local numBack = numEquip["body"] + numEquip["back"] 
     local maxEquip = GetMaxEquip(setId)
-    --- account for special sets and unperfected/perfected
-    -- if it has a normal/perf version 
-
-    ---
     active["front"] = numFront > maxEquip
     active["back"] = numBack > maxEquip
     active["body"] = numEquip["body"] > maxEquip
     self.active[setId] = active 
   end
-  
-  --- GetMaxEquipThreshold (that function would probably the place to add an overwrite for shattered fate?!) 
-  -- but it should probably not be a setting for the user, cuz different addons might have different use cases 
-  -- so i either make the decision for for this set and future set, that i overwrite the max equipped and determine 
-  -- the set as active as soon it hits the first threshold (how would I detect if more thresholds are reached and how would i inform the user? ) 
-  -- it will probably get to the point, where the addons interested in this must do at least some additional manual work, but I should aim for 
-  -- some way to at least address some way to be covered with the events, so addons need not constantly checking and all do the same thing 
-  --- maybe some extra api for sets with exceptions? -- maybe an additional variable provided by the setChange event "isSpecial" 
-  --- and then some API where you get additional information for a certain setId if it is special (the returned data could be unique for different special sets)
 end
 
 
 function SetDetector:DetermineChanges() 
-  -- compare 
-  -- try the _eq thing, moony showed me
+  local changes = {}
+  for setId, active in pairs(self.active) do
+    local function GetActiveState( t )
+      -- active state refers to if the set is active on any bar 
+      -- result false = all false 
+      -- result true = one is true
+      local isActive = false
+      for _, isActiveOnBar in pairs( t )do
+        isActive = isActive or isActiveOnBar
+      end
+    end
+    local oldState = self.archive.active[setId] and GetActiveState(self.archive.active[setId]) or false
+    local newState = GetActiveState( active ) 
+    if oldState ~= newState
+      diff[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED -- use local Vars
+    else
+      -- check if the activeBar changed without changing the 
+      -- overall active state 
+      local wasUpdate = false 
+      for barName, _ in pairs (barList) do 
+        if self.archive.active[setId][barName] ~= self.active[setId][barName] then 
+          wasUpdate = true
+          break
+      end
+      diff[setId] = wasUpdate and LSD_CHANGETYPE_UPDATE or nil 
+    end
+    self.changes = nil
+    self.changes = changes
+  end
 
-  -- do this after AnalyseData on all aspects 
-  -- need to decide, which things I am acutally checking 
-
-  -- also need to decide what i provide with the events 
-  -- maybe like current data and a diff Data 
-  --- create a diff data table, which is used to decide which events to call 
+  -- check if any set is no longer included in current table 
+  -- this means it was unequipped 
+  for setId, active in pairs(self.archive.active) do 
+    if not self.active[setId] then diff[setId] = false end 
+  end
 end
 
 
@@ -502,11 +512,17 @@ function SetDetector:UpdateData( numEquipUpdate )
     self.numEquip[setId] = numEquip
   end
   self:AnalyseData() 
+  self:DetermineChanges() 
+  self:FireCallbacks() --- different for player and group 
 end
 
 
-function SetDetector:FinishedUpdatingData() 
-  -- send data to callback manager or broadcast 
+function SetDetector:FireCallbacks() --- function for player 
+  for setId, changeType in pairs(self.changes) do 
+    CallbackManager.FireCallbacks("SetChange", "player", nil, changeType, setId, "player", self.active["body"], self.active["front"], self.active["back"]) 
+    CallbackManager.FireCallbacks("SetChange", "player", setId, changeType, setId, "player", self.active["body"], self.active["front"], self.active["back"]) 
+  end
+  CallbackManager.FireCallbacks("DataUpdate", "player")
 end
 
 
