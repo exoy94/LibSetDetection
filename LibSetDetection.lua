@@ -228,7 +228,7 @@ end
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
-debugMsg = function( msg ) 
+local function debugMsg( msg ) 
   if not SV.debug then return end
   d( zo_strformat("[<<1>>-LSD] <<2>>", GetTimeString(), msg) )
 end
@@ -245,8 +245,6 @@ end
 -- *unitType* (string - case sensitive) = "player" or "group" 
 -- *id* (string - case sensitive): unique name (for each registryType/unitType) 
 -- *filter*:nilable (if *registryType = "SetChange", needs to be table of numbers (setIds) )
-
-
 
 CallbackManager.results = {
   [CALLBACK_RESULT_SUCCESS] = "success",
@@ -294,7 +292,7 @@ end
 function CallbackManager.BuildRegistryName( registryType, unitType, filterTable ) 
   -- dynamically building name of table in registry
   -- adds suffix "Filtered" if filter exists
-  return zo_strformat("<<1>><<2>>", unitType, registryType, filter and "Filtered" or "")
+  return zo_strformat("<<1>><<2>><<3>>", unitType, registryType, filterTable and "Filtered" or "")
 end 
 
 
@@ -382,7 +380,7 @@ end   -- End of UnregisterCallback
 
 function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
   local CM = CallbackManager
-  local name = CM.BuildRegistryName( registryType, uniType, filter) 
+  local name = CM.BuildRegistryName( registryType, unitType, filter) 
   local callbackList = {}
 
   -- get list of callbacks 
@@ -394,13 +392,14 @@ function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)
     callbackList = CM.registry[name] -- non filtered case
   end 
 
-  -- early out if no callbacks exist 
-  if ZO_IsTableEmpty(callbackList) then return end 
-
   -- debug of registryName and filter (if existing)
   if SV.debug then 
-    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)")") or "")
+    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)..")" or "") )
   end
+
+    -- early out if no callbacks exist 
+    if ZO_IsTableEmpty(callbackList) then return end 
+
   -- fire all callbacks with provided arguments 
   for _, callback in pairs( callbackList ) do 
     callback(...) 
@@ -426,7 +425,12 @@ function SetDetector:New( unitType, unitTag )
   self.setData = initSetData or {}
   self.unitType = unitType
   self.unitTag = unitType == "player" and "player" or unitTag 
+
+  self.numEquip = {}
+  self.active = {}
+  self.lastChanges = {}
   self.archive = {}   -- last setup to determine changes 
+  return self
 end
 
 
@@ -448,6 +452,7 @@ function SetDetector:AnalyseData()
     end
   end
   --- determine active sets
+  local active = {}
   for setId, numEquip in pairs( numEquipTemp ) do   
     local numFront = numEquip["body"] + numEquip["front"] 
     local numBack = numEquip["body"] + numEquip["back"] 
@@ -474,8 +479,8 @@ function SetDetector:DetermineChanges()
     end
     local oldState = self.archive.active[setId] and GetActiveState(self.archive.active[setId]) or false
     local newState = GetActiveState( active ) 
-    if oldState ~= newState
-      diff[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED -- use local Vars
+    if oldState ~= newState then
+      changes[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED -- use local Vars
     else
       -- check if the activeBar changed without changing the 
       -- overall active state 
@@ -484,11 +489,11 @@ function SetDetector:DetermineChanges()
         if self.archive.active[setId][barName] ~= self.active[setId][barName] then 
           wasUpdate = true
           break
+        end
       end
-      diff[setId] = wasUpdate and LSD_CHANGETYPE_UPDATE or nil 
+      changes[setId] = wasUpdate and LSD_CHANGETYPE_UPDATE or nil 
     end
-    self.changes = nil
-    self.changes = changes
+    self.lastChanges = changes
   end
 
   -- check if any set is no longer included in current table 
@@ -500,7 +505,7 @@ end
 
 
 function SetDetector:UpdateArchive() 
-  self.archive = nil 
+  self.archive = {} 
   self.archive["numEquip"] = self.numEquip
   self.archive["active"] = self.active
 end
@@ -508,7 +513,7 @@ end
 
 function SetDetector:UpdateData( numEquipUpdate, unitTag )
   self.unitTag = unitTag
-  self:MoveCurrentDataToArchive() 
+  self:UpdateArchive() 
   for setId, numEquip in pairs(numEquipUpdate) do 
     self.numEquip[setId] = numEquip
   end
@@ -519,7 +524,7 @@ end
 
 
 function SetDetector:FireCallbacks() 
-  for setId, changeType in pairs(self.changes) do 
+  for setId, changeType in pairs(self.lastChanges) do 
     CallbackManager.FireCallbacks("SetChange", self.unitType, nil, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
     CallbackManager.FireCallbacks("SetChange", self.unitType, setId, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
   end
@@ -770,7 +775,7 @@ local function Initialize()
     ["debug"] = false, 
   }
   SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
-
+  SV.debug = true
   SlotManager:Initialize() 
   BroadcastManager.Initialize() 
 
@@ -908,8 +913,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
     end
   else 
     if cmd == "dev" then 
-      -- call development functions 
-      Development.OutputEquippedSets()    
+      --- call development functions 
+      --Development.OutputEquippedSets()
+      Development.OutputPlayerSets()    
     else 
       d("[LibSetDetection] command unknown")
     end
@@ -924,4 +930,8 @@ end
 
 function Development.OutputEquippedSets() 
   d(SlotManager.equippedSets)
+end
+
+function Development.OutputPlayerSets() 
+  d(PlayerSets)
 end
