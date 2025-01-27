@@ -4,19 +4,6 @@
 
 --- check if the setId is provided when the mystical is equipped, that disables all set effects 
 
--- debugVar definition
--- setId threshold? 
--- think about error codes
--- not sure, if "IsValid....Type" is necessary
--- rethink debugFunc, put call behind debugVar to prevent unnecessary str building 
--- loop over filter if table for (un-)register
---- 0. remove remnants of first code playarounds 
---- 1. make list of entities and their tasks,
---- 2. then outline function 
---- 3. then programm them step by step
-
---- function to get setId by setName for development  (string search with upper limit) 
-
 --- maybe add an determine changes in the SlotManger .... happens often to me, that I switch back and forth between two pieces. 
 --- if this happens the lib should not do anything else 
 --[[ 
@@ -29,17 +16,11 @@
   * I probably need a proper initialization procedure anyways, cause I need to estables the state of the data share anyways 
 ]]
 
---- anstelle von "data[setId] = numBody" -> numEquip[setId] = body
-
---[[ Start Diskussion - What Info Do I provide to user?! ]]
-
---- the events should always fire after all internal tables are updated 
---- so make sure to fire all events at the end of the analysis, not during 
+ 
 
 --[[
 
-EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
-*action*: 0 = unequip, 1 = equip, 2 = activityChange 
+
 
 EventDataUpdate( newData, diffData )
 both data are probably just going to be the *setData* table
@@ -548,9 +529,6 @@ function SetDetector:FireCallbacks()
 end
 
 
-
-
-
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------- %% ]]
 --[[ %% -- Group Manager -- %% ]]
@@ -849,28 +827,39 @@ function LibSetDetection.HasSomebodySet( setId, unitType )
 end
 
 
---- Exposed Functions of CallbackManager
+--[[ Exposed Functions of CallbackManager ]]
 --- User Input: 
 --    1. unitType (string - case sensitive): "player" or "group" 
 --    2. id (string - case sensitive): unique name (for each registryType/unitType) 
 --    3. callback (function): called when appropriate callbacks fire
---    4. filter:nilable (optional) - table of filter values 
+--    4. filter:nilable (optional for "SetChange") - table of filter values (setId), for registration or unregistration  
+
+--EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
+--*action*: 0 = unequip, 1 = equip, 2 = activityChange 
+
+--- "SetChanged" Event
+--- Variables provided by Event: 
+--    1. changeType (number):  
+--    2. setId (number): 
+--    3. unitTag (string): "player" or "group"..i  (except group tag that corresponds with player)
+--    4. isActiveOnBody (bool)
+--    5. isActiveOnFront (bool) 
+--    6. isActiveOnBack (bool) 
 
 function LibSetDetection.RegisterForSetChange( ... )
   return CallbackManager.HandleRegistrations( true, "SetChange", ...)
 end
 
--- user input: unitType, id, callback
-function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
-end
-
--- user input: unitType, id, callback, {setIds} - (optional)
 function LibSetDetection.UnregisterSetChange( ... ) 
   return CallbackManager.HandleRegistrations( false, "SetChange", ...)
 end
 
--- user input: unitType, id, callback
+
+
+function LibSetDetection.RegisterForDataUpdate( ... ) 
+  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
+end
+
 function LibSetDetection.UnregisterDataUpdate( ... ) 
   return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
 end
