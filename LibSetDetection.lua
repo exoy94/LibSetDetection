@@ -214,6 +214,9 @@ local function debugMsg( msg )
   d( zo_strformat("[<<1>>-LSD] <<2>>", GetTimeString(), msg) )
 end
 
+local function devMsg(id, msg) 
+  d( zo_strformat("[<<1>> LSD - <<2>>] <<3>>", GetTimeString(), id, msg) )  
+end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ---------------------- %% ]]
@@ -403,9 +406,15 @@ SetDetector.__index = SetDetector
 function SetDetector:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
+  if unitType == "player" then 
+    self.debug = false 
+  end
+
+  if unitType == "group" then 
+    self.debug = false 
+  end
+
   self.setData = initSetData or {}
-  self.unitType = unitType
-  self.unitTag = unitType == "player" and "player" or unitTag 
 
   self.numEquip = {}
   self.active = {}
@@ -485,37 +494,40 @@ function SetDetector:DetermineChanges()
 end
 
 
-function SetDetector:UpdateArchive() 
+function SetDetector:ResetArchive() 
   self.archive = {} 
   self.archive["numEquip"] = self.numEquip
   self.archive["active"] = self.active
 end
 
 
-function SetDetector:UpdateData( numEquipUpdate, unitTag )
-  self.unitTag = unitTag
-  self:UpdateArchive() 
+function SetDetector:ReceiveData( numEquipUpdate, unitTag )
+  
+  self:ResetArchive() 
   for setId, numEquip in pairs(numEquipUpdate) do 
-    self.numEquip[setId] = numEquip
+     self.numEquip[setId] = numEquip
   end
   self:AnalyseData() 
   self:DetermineChanges() 
   
-  d("numEquip")
-  d(self.numEquip)
-  d("-----")
-  d("numEquip Archive")
-  d(self.archive.numEquip)
-  d("-----")
-  d("active")
-  d(self.active)
-  d("----")
-  d("active Archive")
-  d(self.archive.active)
-  d("-----")
-  d("lastChanges")
-  d(self.lastChanges) 
-  d("=====")
+  if self.debug then 
+    devMsg( "SD"..self.unitType, "received data")
+    d("numEquip")
+    d(self.numEquip)
+    d("-----")
+    d("numEquip Archive")
+    d(self.archive.numEquip)
+    d("-----")
+    d("active")
+    d(self.active)
+    d("----")
+    d("active Archive")
+    d(self.archive.active)
+    d("-----")
+    d("lastChanges")
+    d(self.lastChanges) 
+    d("=====")
+  end
   --self:FireCallbacks() 
 end
 
@@ -683,50 +695,63 @@ end
 
 
 function SlotManager:Initialize() 
+  self.debug = true 
   self.equippedSets = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedSets[slotId] = 0 
   end
-  self.waitTime = 1000 --- ToDo add setting for advanced user ? 
-  self.pauseTransmission = false
+  self.queueDuration = 3000 --- ToDo add setting for advanced user ? 
+end
+
+
+function SlotManager:UpdateLoadout() 
+  if self.debug then devMsg( "SM", "loadout update" ) end
+  for slotId, _ in pairs (equipSlotList) do 
+    self:UpdateSetId( slotId ) 
+  end
+  self:SentData()  
 end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  -- keeping track, which slot has which set
-  self.equippedSets[slotId] = GetSetId(slotId)
-  -- if two-handers, assigns setId of main-hand to off-hand  
-  if IsWeaponSlot( slotId ) then
-    self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId( EQUIP_SLOT_OFF_HAND )
-    self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId( EQUIP_SLOT_BACKUP_OFF )
-    if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
-      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId(EQUIP_SLOT_MAIN_HAND)
-    end
-    if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
-      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId(EQUIP_SLOT_BACKUP_MAIN)
-    end
+  if self.debug then devMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
+  self:UpdateSetId( slotId ) 
+  self:ResetQueue() 
+end
+
+
+function SlotManager:UpdateSetId( slotId )
+    -- keeping track, which slot has which set
+    self.equippedSets[slotId] = GetSetId(slotId)
+    -- if two-handers, assigns setId of main-hand to off-hand  
+    if IsWeaponSlot( slotId ) then
+      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId( EQUIP_SLOT_OFF_HAND )
+      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId( EQUIP_SLOT_BACKUP_OFF )
+      if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
+        self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId(EQUIP_SLOT_MAIN_HAND)
+      end
+      if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
+        self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId(EQUIP_SLOT_BACKUP_MAIN)
+      end
+    end  
+end
+
+
+function SlotManager:ResetQueue() 
+  if self.queueId then 
+    zo_removeCallLater( self.queueId )
+    if self.debug then devMsg("SM", "reset queue") end 
+  else 
+    if self.debug then devMsg("SM", "start queue") end
   end
-  if not self.pauseTransmission then self:QueueTransmission() end --- ToDo SendData with queue
+  self.queueId = callbackLater( function() 
+    self:SendData()
+    self.queueId = nil 
+  end, self.queueDuration ) 
 end
 
 
-function SlotManager:QueueTransmission() 
-  if self.queue then zo_removeCallLater( self.queue ) end
-  self.queue = zo_callLater( function() self:TransmitData() end, self.waitTime)
-end
-
-
-function SlotManager:UpdateAllSlots() 
-  self.pauseTransmission = true
-  for slotId, _ in pairs (equipSlotList) do 
-    self:UpdateSlot( slotId ) 
-  end 
-  self.pauseTransmission = false 
-  self:TransmitData() 
-end
-
-
-function SlotManager:TransmitData() 
+function SlotManager:SendData() 
   local numEquipUpdate = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
@@ -734,10 +759,13 @@ function SlotManager:TransmitData()
       numEquipUpdate[setId] = numEquipUpdate[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
       numEquipUpdate[setId][barName] = numEquipUpdate[setId][barName] + 1
     end
+  end 
+  if self.debug then 
+    devMsg("SM", "relay data")
+    d(numEquipUpdate) 
   end
-  self.queue = nil 
-  PlayerSets:UpdateData( numEquipUpdate ) 
-end   -- End of SendData
+  PlayerSets:ReceiveData( numEquipData ) 
+end
 
 
 --[[ ---------------- ]]
@@ -749,12 +777,12 @@ local function OnSlotUpdate(_, _, slotId, _, _, _)
 end
 
 local function OnArmoryOperation() 
-  zo_callLater( function() SlotManager:UpdateAllSlots() end, 1000)
+  zo_callLater( function() SlotManager:UpdateLoadout() end, 1000)
 end
 
 local function OnInitialPlayerActivated() 
   EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
-  SlotManager:UpdateAllSlots()
+  SlotManager:UpdateLoadout() 
 end
 
 
@@ -770,6 +798,7 @@ local function Initialize()
   }
   SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
   SV.debug = true
+  SV.dev = true
   SlotManager:Initialize() 
   BroadcastManager.Initialize() 
 
