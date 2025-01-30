@@ -361,8 +361,37 @@ function CallbackManager.UnregisterCallback( registryName, filter, id )
 end   -- End of UnregisterCallback
 
 
-
 function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
+  local CM = CallbackManager
+  local name = CM.BuildRegistryName( registryType, unitType, filter) 
+  local callbackList = {}
+
+  -- get list of callbacks 
+  if filter then 
+    if CM.registry[name][filter] then  -- check if any entries for filter exist
+      callbackList = CM.registry[name][filter] -- filtered case
+    end
+  else 
+    callbackList = CM.registry[name] -- non filtered case
+  end 
+
+  -- debug of registryName and filter (if existing)
+  if SV.debug then 
+    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)..")" or "") )
+  end
+
+    -- early out if no callbacks exist 
+    if ZO_IsTableEmpty(callbackList) then return end 
+
+  -- fire all callbacks with provided arguments 
+  for _, callback in pairs( callbackList ) do 
+    callback(...) 
+  end
+end   -- End of FireCallbacks
+
+
+
+function CallbackManager.FireCallbacks_Old( registryType, unitType, filter, ...)  
   local CM = CallbackManager
   local name = CM.BuildRegistryName( registryType, unitType, filter) 
   local callbackList = {}
@@ -407,57 +436,58 @@ function SetDetector:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = false 
+    self.debug = true
   end
-
   if unitType == "group" then 
     self.debug = false 
   end
+  self.unitType = unitType or "empty"
 
-  self.setData = initSetData or {}
+  self.setData = initSetData or {} --- Needed? 
 
   self.numEquip = {}
-  self.active = {}
-  self.lastChanges = {}
-  self.archive = {}   -- last setup to determine changes 
+  self.activeOnBar = {}
+
+  self.setChanges = {} --- needed? 
   return self
 end
 
 
 function SetDetector:AnalyseData()
-  self.active = {}
+  if self.debug then devMsg("SD - "..self.unitType, "analyse data") end
+  self.activeOnBar = {}
   --- handle perfect/unperfect
   local numEquipTemp = {}
   for setId, numEquip in pairs(self.numEquip) do 
     local unperfSetId = GetItemSetUnperfectedSetId(setId)
     if unperfSetId ~= 0 then 
-      numEquipTemp[unperfSetId] = {}
+      numEquipTemp[unperfSetId] = numEquipTemp[unperfSetId] or {["body"]=0, ["back"]=0, ["front"]=0}
       for barName, _ in pairs(barList) do 
-        numEquipTemp[unperfSetId][barName] = numEquip[barName] + self.numEquip[unperfSetId] 
+        numEquipTemp[unperfSetId][barName] = numEquipTemp[unperfSetId][barName] + numEquip[barName] 
       end
-    else 
+    elseif setId ~= 0 then -- ignore no sets
       -- making sure values for unperfected set are not overwritten
       -- if it is done after the perfected
       numEquipTemp[setId] = numEquipTemp[setId] or numEquip 
     end
   end
   --- determine active sets
-  local active = {}
-  for setId, numEquip in pairs( numEquipTemp ) do   
+  for setId, numEquip in pairs( numEquipTemp ) do  
+    local active = {} 
     local numFront = numEquip["body"] + numEquip["front"] 
     local numBack = numEquip["body"] + numEquip["back"] 
     local maxEquip = GetMaxEquip(setId)
-    active["front"] = numFront > maxEquip
-    active["back"] = numBack > maxEquip
-    active["body"] = numEquip["body"] > maxEquip
-    self.active[setId] = active 
+    active["front"] = numFront >= maxEquip
+    active["back"] = numBack >= maxEquip
+    active["body"] = numEquip["body"] >= maxEquip
+    self.activeOnBar[setId] = active 
   end
 end
 
 
 function SetDetector:DetermineChanges() 
-  local changes = {}
-  for setId, active in pairs(self.active) do
+  local setChanges = {}
+  for setId, active in pairs(self.activeOnBar) do
     local function GetActiveState( t )
       -- active state refers to if the set is active on any bar 
       -- result false = all false 
@@ -466,73 +496,85 @@ function SetDetector:DetermineChanges()
       for _, isActiveOnBar in pairs( t )do
         isActive = isActive or isActiveOnBar
       end
+      return isActive
     end
-    local oldState = self.archive.active[setId] and GetActiveState(self.archive.active[setId]) or false
+    local oldState = self.archive.activeOnBar[setId] and GetActiveState(self.archive.activeOnBar[setId]) or false
     local newState = GetActiveState( active ) 
     if oldState ~= newState then
-      changes[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED -- use local Vars
-    else
-      -- check if the activeBar changed without changing the 
-      -- overall active state 
-      local wasUpdate = false 
+      setChanges[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED 
+    elseif newState then
+      -- check if the activeBar changed without changing the overall active state
+      -- this can only occure, if the set is active on at least one bar
+      local updated = false 
       for barName, _ in pairs (barList) do 
-        if self.archive.active[setId][barName] ~= self.active[setId][barName] then 
-          wasUpdate = true
+        if self.archive.activeOnBar[setId][barName] ~= self.activeOnBar[setId][barName] then 
+          updated = true
           break
         end
       end
-      changes[setId] = wasUpdate and LSD_CHANGETYPE_UPDATE or nil 
+      setChanges[setId] = updated and LSD_CHANGETYPE_UPDATE or nil 
     end
-    self.lastChanges = changes
+    self.setChanges = setChanges
   end
 
   -- check if any set is no longer included in current table 
   -- this means it was unequipped 
-  for setId, active in pairs(self.archive.active) do 
-    if not self.active[setId] then diff[setId] = false end 
+  for setId, active in pairs(self.archive.activeOnBar) do 
+    if not self.activeOnBar[setId] then diff[setId] = false end 
   end
 end
 
 
 function SetDetector:ResetArchive() 
+  if self.debug then devMsg( "SD- "..self.unitType, "archive reset") end
   self.archive = {} 
-  self.archive["numEquip"] = self.numEquip
-  self.archive["active"] = self.active
+  self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
+  self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
 end
 
 
-function SetDetector:ReceiveData( numEquipUpdate, unitTag )
-  
+function SetDetector:ReceiveData( numEquipData, unitTag )
+
   self:ResetArchive() 
-  for setId, numEquip in pairs(numEquipUpdate) do 
+  for setId, numEquip in pairs( numEquipData ) do 
      self.numEquip[setId] = numEquip
   end
+
+  if self.debug then 
+    devMsg("SD - "..self.unitType, "numEquip - archive")
+    d(self.archive.numEquip)
+    d("---------- end: numEquip archive")
+    devMsg("SD - "..self.unitType, "numEquip - current")
+    d(self.numEquip)
+    d("---------- end: numEquip - current ")
+  end
+
   self:AnalyseData() 
+
+  if self.debug then 
+    devMsg("SD - "..self.unitType, "activeOnBar - archive")
+    d(self.archive.activeOnBar)
+    d("---------- end: activeOnBar - archive")
+    devMsg("SD - "..self.unitType, "activeOnBar - current")
+    d(self.activeOnBar)
+    d("---------- end: activeOnBar - current ")
+  end
+
   self:DetermineChanges() 
   
   if self.debug then 
-    devMsg( "SD"..self.unitType, "received data")
-    d("numEquip")
-    d(self.numEquip)
-    d("-----")
-    d("numEquip Archive")
-    d(self.archive.numEquip)
-    d("-----")
-    d("active")
-    d(self.active)
-    d("----")
-    d("active Archive")
-    d(self.archive.active)
-    d("-----")
-    d("lastChanges")
-    d(self.lastChanges) 
-    d("=====")
+    devMsg("SD - "..self.unitType, "setChanges")
+    d(self.setChanges)
+    d("---------- end: setChanges")
   end
   --self:FireCallbacks() 
 end
 
 
 function SetDetector:FireCallbacks() 
+
+
+
   for setId, changeType in pairs(self.lastChanges) do 
     CallbackManager.FireCallbacks("SetChange", self.unitType, nil, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
     CallbackManager.FireCallbacks("SetChange", self.unitType, setId, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
@@ -695,7 +737,7 @@ end
 
 
 function SlotManager:Initialize() 
-  self.debug = true 
+  self.debug = false
   self.equippedSets = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedSets[slotId] = 0 
@@ -709,7 +751,7 @@ function SlotManager:UpdateLoadout()
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
-  self:SentData()  
+  self:SendData()  
 end
 
 
@@ -744,7 +786,8 @@ function SlotManager:ResetQueue()
   else 
     if self.debug then devMsg("SM", "start queue") end
   end
-  self.queueId = callbackLater( function() 
+  self.queueId = zo_callLater( function() 
+    if self.debug then devMsg("SM", "end queue") end
     self:SendData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -752,17 +795,18 @@ end
 
 
 function SlotManager:SendData() 
-  local numEquipUpdate = {} 
+  local numEquipData = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedSets[slotId] 
-      numEquipUpdate[setId] = numEquipUpdate[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
-      numEquipUpdate[setId][barName] = numEquipUpdate[setId][barName] + 1
+      numEquipData[setId] = numEquipData[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
+      numEquipData[setId][barName] = numEquipData[setId][barName] + 1
     end
   end 
   if self.debug then 
     devMsg("SM", "relay data")
-    d(numEquipUpdate) 
+    d(numEquipData) 
+    d("---------- end: relay data")
   end
   PlayerSets:ReceiveData( numEquipData ) 
 end
@@ -937,7 +981,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d("[LibSetDetection] matching set ids:")
       for i=0,1023,1 do 
         local setName = GetSetName(i)
-        if string.find( string.lower(setName), string.lower(param[2]) ) then 
+        if string.find( string.lower(setName), string.lower(param[1]) ) then 
           d( zo_strformat("<<1>> - <<2>>", i, setName))
         end
       end
@@ -967,5 +1011,5 @@ function Development.OutputEquippedSets()
 end
 
 function Development.OutputPlayerSets() 
-  d(PlayerSets)
+  d(PlayerSets.numEquip)
 end
