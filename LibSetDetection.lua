@@ -19,9 +19,6 @@
  
 
 --[[
-
-
-
 EventDataUpdate( newData, diffData )
 both data are probably just going to be the *setData* table
 ([setId] = {numBody, numFront, numBack} )
@@ -50,11 +47,6 @@ or it returns just the list with slotId to setId
   -- some way to at least address some way to be covered with the events, so addons need not constantly checking and all do the same thing 
   --- maybe some extra api for sets with exceptions? -- maybe an additional variable provided by the setChange event "isSpecial" 
   --- and then some API where you get additional information for a certain setId if it is special (the returned data could be unique for different special sets)
-
-
-
-Search on ESOUI Source Code GetItemSetUnperfectedSetId(integer itemSetId)
-  Returns: integer unperfectedSetId 
 ]]
 
 
@@ -152,9 +144,10 @@ local CALLBACK_RESULT_DUPLICATE_NAME = 5
 local CALLBACK_RESULT_UNKNOWN_NAME = 6
 
 --- change types for events (global) 
-LSD_CHANGETYPE_UNEQUIPPED = 1 
-LSD_CHANGETYPE_EQUIPPED = 2
-LSD_CHANGETYPE_UPDATE = 3
+LSD_CHANGE_TYPE_UNEQUIPPED = 1 
+LSD_CHANGE_TYPE_EQUIPPED = 2
+LSD_CHANGE_TYPE_UPDATE = 3
+
 
 --[[ ------------------------------- ]]
 --[[ -- Generic Utility Functions -- ]]
@@ -204,6 +197,23 @@ local function GetMaxEquip( setId )
   return maxEquip
 end
 
+local function ConvertToUnperfected( setId ) 
+  local unperf = GetItemSetUnperfectedSetId( setId ) 
+  if unperf == 0 then 
+    return setId 
+  else 
+    return unperf 
+  end
+end
+
+local function ExtendNumEquip( numEquip ) 
+  local numEquipExtended = ZO_ShallowTableCopy( numEquip )  
+  for setId, _ in pairs( numEquipExtended ) 
+    numEquipExtended[setId].setName = GetSetName(setId)
+    numEquipExtended[setId].maxEquip = GetMaxEquip(setId) 
+  end
+end
+
 
 --[[ ----------- ]]
 --[[ -- Debug -- ]] 
@@ -228,7 +238,9 @@ end
 -- *registryType* (string - case sensitive ): "SetChange" or "DataUpdate"
 -- *unitType* (string - case sensitive) = "player" or "group" 
 -- *id* (string - case sensitive): unique name (for each registryType/unitType) 
--- *filter*:nilable (if *registryType = "SetChange", needs to be table of numbers (setIds) )
+-- *filter*:nilable (if *registryType = "SetChange", needs to be numer or table of numbers (setIds) )
+
+CallbackManager.debug = false 
 
 CallbackManager.results = {
   [CALLBACK_RESULT_SUCCESS] = "success",
@@ -242,15 +254,128 @@ CallbackManager.results = {
 
 --- registry initialization
 CallbackManager.registry = {
-    ["playerSetChange"] = {}, 
-    ["playerSetChangeFiltered"] = {}, 
-    ["playerDataUpdate"] = {},
- --   ["playerDataUpdateFiltered"] = {},  
-    ["groupSetChange"] = {}, 
-    ["groupSetChangeFiltered"] = {},
-    ["groupDataUpdate"] = {},
+  ["playerSetChanges"] = {}, 
+  ["groupSetChanges"] = {}, 
+  ["playerUpdateData"] = {}, 
+  ["groupUpdateData"] = {}, 
+}
+
+
+function CallbackManager.UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
+  local CM = CallbackManager 
+  if unitType == "all" or not unitType then   -- if unitType is nil or "all" execute function for "player" and "group"
+    local resultPlayer = CM.UpdateRegistry(action, registryType, uniqueId, callback, "player", filterTable)
+    local resultGroup = CM.UpdateRegistry(action, registryType, uniqueId, callback, "group", filterTable)
+    return resultPlayer, resultGroup
+  end
+  --- verify general user inputs
+  if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end
+  if not IsString(uniqueId) then return CALLBACK_RESULT_INVALID_NAME end 
+  local unitTypeList = { ["player"]=true, ["group"]=true } 
+  if not unitTypeList[unitType] then return CALLBACK_RESULT_INVALID_UNITTYPE end 
+  --- set change registry
+  local registryName = unitType..registryType
+  if registryType == "SetChange" then 
+    return CM.UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
+  end 
+  --- data update registry
+  if registryType == "DataUpdate" then 
+    return CM.UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
+  end
+end   -- End of "UpdateRegistry"
+
+
+
+function CallbackManager.UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
+  --- validate filter 
+  local function IsValidSetChangeFilter() 
+    if not filter then return true end --  
+    if IsNumber(filter) then return true end 
+    if IsTable(filter) then 
+      for _, filterId in pairs(filter) do 
+        if not IsNumber(filterId) then return false end 
+      end
+      return true 
+    end
+    return false 
+  end
+  if not IsValidSetChangeFilter() then return CALLBACK_RESULT_INVALID_FILTER end 
+  --- format filter  
+  filter = filter or {0}    -- events with no filter will be mapped to an arbitrary filter Id of 0 
+  if IsNumber(filter) then filter = {filter} end      -- this makes subsequent code easier and clearer
+  for key, filterId in pairs(filter) do 
+    filter[key] = ConvertToUnperfected( filterId ) -- change perfected to unperfected setId
+  end
+  --- update registry
+  for _, filterId in pairs(filter) do 
+    local callbackList = CallbackManager.registry[registryName][filterId] or {}
+    if action then    -- registration
+      if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+      callbackList[uniqueId] = callback 
+    else  -- unregistration
+      if not callbackList[uniqueId] then return return CALLBACK_RESULT_UNKNOWN_NAME end 
+      callbackList[uniqueId] = nil
+    end 
+  end
+  return CALLBACK_RESULT_SUCCESS
+end   -- End of "UpdateSetChangeRegistry"
+
+
+function CallbackManager.UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
+  --- validate filter
+  if filter then return CALLBACK_RESULT_INVALID_FILTER end 
+  --- update registry
+  local callbackList = CallbackManager.registry[registryName] 
+  if action then -- registration
+    if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+    callbackList[uniqueId] = callback 
+  else -- unregistration
+    if not callbackList[uniqueId] then return return CALLBACK_RESULT_UNKNOWN_NAME end 
+    callbackList[uniqueId] = nil
+  end
+end   -- UpdateDataUpdateRegistry
+
+
+function CallbackManager.FireCallbacks( eventType, unitType, setId, ... ) 
+  local function FireCallbacks(callbackList) 
+    if ZO_IsTableEmpty( callbackList ) then return end 
+    for _, callback in pairs( callbackList ) do 
+      callback(...) 
+    end
+  end
+    
+  local registryName = unitType..eventType
+  if eventType == "DataUpdate" then 
+    FireCallbacks( CM.registry[registryName] )
+    -- unitTag
+    -- numEquipExtended
+    -- equippedGear
+  elseif eventType == "SetChange" then 
+    -- changeType 
+    -- unperfSetId 
+    -- unitTag 
+    -- isActiveOnBody 
+    -- isActiveOnFront
+    -- isActiveOnBack
+    FireCallbacks( CM.registry[registryName][0] )
+    FireCallbacks( CM.registry[registryName][setId] )
+  end
+end
+
+
+
+--[[ -- OLD -- 
+
+--CallbackManager.registry = {
+--    ["playerSetChange"] = {}, 
+--    ["playerSetChangeFiltered"] = {}, 
+--    ["playerDataUpdate"] = {},
+--   ["playerDataUpdateFiltered"] = {},  
+--    ["groupSetChange"] = {}, 
+--    ["groupSetChangeFiltered"] = {},
+--    ["groupDataUpdate"] = {},
 --    ["groupDataUpdateFiltered"] = {},
-  }
+--  }
 
 
 function CallbackManager.IsValidUnitType( unitType )
@@ -299,9 +424,12 @@ end
 
 
 function CallbackManager.HandleRegistration(action, registryType, id, callback, unitType, filter)
-  --[[Inputs]] -- *action* (bool) - true/registration or false/unregistration
-  --[[Output]] -- *resultCode* (number) - code to determine outcome of (un-)registration
-  local CM = CallbackManager
+  --- Input
+  -- *action* (bool) - true/registration or false/unregistration
+  --- Output
+   -- *resultCode* (number) - code to determine outcome of (un-)registration
+  
+   local CM = CallbackManager
   --- verify user inputs 
   if not IsString(id) then return CALLBACK_RESULT_INVALID_NAME end 
   if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end 
@@ -379,10 +507,7 @@ function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)
     end
   end
 end   -- End of FireCallbacks
-
---[[ End of CallbackManager ]]
-
-
+]]
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -457,7 +582,7 @@ function SetDetector:DetermineChanges()
     local oldState = self.archive.activeOnBar[setId] and GetActiveState(self.archive.activeOnBar[setId]) or false
     local newState = GetActiveState( active ) 
     if oldState ~= newState then
-      setChanges[setId] = newState and LSD_CHANGETYPE_EQUIPPED or LSD_CHANGETYPE_UNEQUIPPED 
+      setChanges[setId] = newState and LSD_CHANGE_TYPE_EQUIPPED or LSD_CHANGE_TYPE_UNEQUIPPED 
     elseif newState then
       -- check if the activeBar changed without changing the overall active state
       -- this can only occure, if the set is active on at least one bar
@@ -468,7 +593,7 @@ function SetDetector:DetermineChanges()
           break
         end
       end
-      setChanges[setId] = updated and LSD_CHANGETYPE_UPDATE or nil 
+      setChanges[setId] = updated and LSD_CHANGE_TYPE_UPDATE or nil 
     end
     self.setChanges = setChanges
   end
@@ -518,17 +643,19 @@ function SetDetector:ReceiveData( numEquipData, unitTag )
       d("---------- end: setChanges")
     end
   if not ZO_IsTableEmpty(self.setChanges) then 
-    self:FireCallbacksForSetChanges() 
+    self:FireCallbacks() 
   end
 end
 
 
-function SetDetector:FireCallbacksForSetChange() 
+function SetDetector:FireCallbacks() 
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks")
   for setId, changeType in pairs(self.setChanges) do 
     CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
       ..changeType, setId, self.unitTag, 
-      ..self.activeOnBar[setId]["body"], self.activeOnBar[setId]["front"], self.activeOnBar[setId]["back"] ) 
+      ..self.activeOnBar[setId]["body"], 
+      ..self.activeOnBar[setId]["front"], 
+      ..self.activeOnBar[setId]["back"]) 
   end
 end
 
@@ -688,9 +815,9 @@ end
 
 function SlotManager:Initialize() 
   self.debug = false
-  self.equippedSets = {} 
+  self.equippedGear = {} 
   for slotId, _ in pairs( equipSlotList ) do 
-    self.equippedSets[slotId] = 0 
+    self.equippedGear[slotId] = 0 
   end
   self.queueDuration = 3000 --- ToDo add setting for advanced user ? 
 end
@@ -714,16 +841,16 @@ end
 
 function SlotManager:UpdateSetId( slotId )
     -- keeping track, which slot has which set
-    self.equippedSets[slotId] = GetSetId(slotId)
+    self.equippedGear[slotId] = GetSetId(slotId)
     -- if two-handers, assigns setId of main-hand to off-hand  
     if IsWeaponSlot( slotId ) then
-      self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId( EQUIP_SLOT_OFF_HAND )
-      self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId( EQUIP_SLOT_BACKUP_OFF )
+      self.equippedGear[EQUIP_SLOT_OFF_HAND] = GetSetId( EQUIP_SLOT_OFF_HAND )
+      self.equippedGear[EQUIP_SLOT_BACKUP_OFF] = GetSetId( EQUIP_SLOT_BACKUP_OFF )
       if IsTwoHander(EQUIP_SLOT_MAIN_HAND) then
-        self.equippedSets[EQUIP_SLOT_OFF_HAND] = GetSetId(EQUIP_SLOT_MAIN_HAND)
+        self.equippedGear[EQUIP_SLOT_OFF_HAND] = GetSetId(EQUIP_SLOT_MAIN_HAND)
       end
       if IsTwoHander(EQUIP_SLOT_BACKUP_MAIN) then
-        self.equippedSets[EQUIP_SLOT_BACKUP_OFF] = GetSetId(EQUIP_SLOT_BACKUP_MAIN)
+        self.equippedGear[EQUIP_SLOT_BACKUP_OFF] = GetSetId(EQUIP_SLOT_BACKUP_MAIN)
       end
     end  
 end
@@ -745,27 +872,29 @@ end
 
 
 function SlotManager:SendData() 
-  local numEquipData = {} 
+  local numEquip = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
-      local setId = self.equippedSets[slotId] 
-      numEquipData[setId] = numEquipData[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
-      numEquipData[setId][barName] = numEquipData[setId][barName] + 1
+      local setId = self.equippedGear[slotId] 
+      numEquip[setId] = numEquip[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
+      numEquip[setId][barName] = numEquip[setId][barName] + 1
     end
   end 
   if self.debug and ExoyDev then 
     devMsg("SM", "relay data")
-    d(numEquipData) 
+    d(numEquip) 
     d("---------- end: relay data")
   end
-  PlayerSets:ReceiveData( numEquipData ) 
-  CallbackManager:FireCallbacks( "DataUpdate", "player")
+  PlayerSets:ReceiveData( numEquip ) 
+  CallbackManager:FireCallbacks( "DataUpdate", "player", nil, 
+    .."player", ExtendNumEquip( numEquip), self.equippedGear )
 end
 
-
---[[ ---------------- ]]
---[[ -- ZOS Events -- ]]
---[[ ---------------- ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------- %% ]]
+--[[ %% -- ZOS Events -- %% ]]
+--[[ %% ---------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
 
 local function OnSlotUpdate(_, _, slotId, _, _, _) 
   SlotManager:UpdateSlot(slotId)
@@ -779,7 +908,6 @@ local function OnInitialPlayerActivated()
   EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
   SlotManager:UpdateLoadout() 
 end
-
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% -------------------- %% ]]
@@ -871,11 +999,11 @@ end
 --    6. isActiveOnBack (bool) 
 
 function LibSetDetection.RegisterForSetChange( ... )
-  return CallbackManager.HandleRegistrations( true, "SetChange", ...)
+  return CallbackManager.UpdateRegistry( true, "SetChange", ...)
 end
 
 function LibSetDetection.UnregisterSetChange( ... ) 
-  return CallbackManager.HandleRegistrations( false, "SetChange", ...)
+  return CallbackManager.UpdateRegistry( false, "SetChange", ...)
 end
 
 
@@ -883,11 +1011,11 @@ end
 -- player when slots change (ToDo) 
 -- group when number at any bar changes
 function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
+  return CallbackManager.UpdateRegistry( true, "DataUpdate", ...)
 end
 
 function LibSetDetection.UnregisterDataUpdate( ... ) 
-  return CallbackManager.HandleRegistrations( false, "DataUpdate", ...)
+  return CallbackManager.UpdateRegistry( false, "DataUpdate", ...)
 end
 
 
@@ -943,7 +1071,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d("[LibSetDetection] search string is missing ")
     end
   else 
-    if cmd == "dev" then 
+    if cmd == "dev" and ExoyDev  then 
       --- call development functions 
       --Development.OutputEquippedSets()
       Development.OutputPlayerSets()    
@@ -960,7 +1088,7 @@ end
 --[[ --------------------------- ]]
 
 function Development.OutputEquippedSets() 
-  d(SlotManager.equippedSets)
+  d(SlotManager.equippedGear)
 end
 
 function Development.OutputPlayerSets() 
