@@ -208,10 +208,11 @@ end
 
 local function ExtendNumEquip( numEquip ) 
   local numEquipExtended = ZO_ShallowTableCopy( numEquip )  
-  for setId, _ in pairs( numEquipExtended ) do
+  for setId, _ in pairs( numEquip ) do
     numEquipExtended[setId].setName = GetSetName(setId)
     numEquipExtended[setId].maxEquip = GetMaxEquip(setId) 
   end
+  return numEquipExtended
 end
 
 
@@ -389,7 +390,7 @@ function SetDetector:New( unitType, unitTag )
     self.debug = false 
   end
   self.unitType = unitType or "empty"
-  self.numEquip = {}
+  self.numEquip = {} 
   self.activeOnBar = {}
   return self
 end
@@ -397,7 +398,7 @@ end
 
 function SetDetector:ReceiveData( numEquipData, unitTag )
   self.unitTag = unitTag
-  self:ResetArchive() 
+  self:InitTables() 
   for setId, numEquip in pairs( numEquipData ) do 
      self.numEquip[setId] = numEquip
   end
@@ -418,23 +419,25 @@ function SetDetector:ReceiveData( numEquipData, unitTag )
       d(self.activeOnBar)
       d("---------- end: activeOnBar - current ")
     end
-  self:DetermineChanges() 
+  local setChanges = self:DetermineChanges() 
     if self.debug and ExoyDev then 
       devMsg("SD - "..self.unitType, "setChanges")
-      d(self.setChanges)
+      d(setChanges)
       d("---------- end: setChanges")
     end
-  if not ZO_IsTableEmpty(self.setChanges) then 
-    self:FireCallbacks() 
+  if not ZO_IsTableEmpty(setChanges) then 
+    self:FireCallbacks( setChanges ) 
   end
 end
 
 
-function SetDetector:ResetArchive() 
-  if self.debug and ExoyDev then devMsg( "SD- "..self.unitType, "archive reset") end
+function SetDetector:InitTables() 
+  if self.debug and ExoyDev then devMsg( "SD- "..self.unitType, "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
+  self.numEquip = {} 
+  self.activeOnBar = {}
 end
 
 
@@ -499,7 +502,7 @@ function SetDetector:DetermineChanges()
       end
       setChanges[setId] = updated and LSD_CHANGE_TYPE_UPDATE or nil 
     end
-    self.setChanges = setChanges
+    return setChanges
   end
 
   -- check if any set is no longer included in current table 
@@ -510,9 +513,9 @@ function SetDetector:DetermineChanges()
 end
 
 
-function SetDetector:FireCallbacks() 
+function SetDetector:FireCallbacks( setChanges ) 
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks") end
-  for setId, changeType in pairs(self.setChanges) do 
+  for setId, changeType in pairs( setChanges ) do 
     CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
      changeType, setId,   self.unitTag, 
      self.activeOnBar[setId]["body"], 
@@ -742,9 +745,10 @@ function SlotManager:SendData()
       numEquip[setId][barName] = numEquip[setId][barName] + 1
     end
   end 
+  numEquip[0] = nil
   if self.debug and ExoyDev then 
     devMsg("SM", "relay data")
-    d(numEquip) 
+    d( ExtendNumEquip(numEquip) )
     d("---------- end: relay data")
   end
   PlayerSets:ReceiveData( numEquip, "player" ) 
