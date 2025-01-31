@@ -244,10 +244,12 @@ CallbackManager.results = {
 CallbackManager.registry = {
     ["playerSetChange"] = {}, 
     ["playerSetChangeFiltered"] = {}, 
-    ["playerDataUpdated"] = {}, 
+    ["playerDataUpdate"] = {},
+    ["playerDataUpdateFiltered"] = {},  
     ["groupSetChange"] = {}, 
     ["groupSetChangeFiltered"] = {},
-    ["groupDataUpdated"] = {},  
+    ["groupDataUpdate"] = {},
+    ["groupDataUpdateFiltered"] = {},
   }
 
 
@@ -257,19 +259,16 @@ function CallbackManager.IsValidUnitType( unitType )
 end
 
 
-function CallbackManager.IsValidFilter( registryType, filter) 
+function CallbackManager.IsValidFilter( filter) 
   if not filter then return true end -- filter is nilable
-  -- filter for setChanges needs to be number 
-  if registryType == "SetChange" then 
-    if IsTable(filter) then 
-      for _, setId in pairs(filter) do 
-        if not IsNumber(filter) then return false end
-      end
-      return true
+  if IsNumber(filter) then return true 
+  if IsTable(filter) then 
+    for _, filterId in pairs(filter) do 
+      if not IsNumber(filterId) then return false end
     end
-  else 
-    return false
+    return true
   end
+  return false
 end   
 
 
@@ -280,35 +279,38 @@ function CallbackManager.BuildRegistryName( registryType, unitType, filterTable 
 end 
 
 
-function CallbackManager.HandleRegistration(action, registryType, unitType, id, callback, filterTable)
-  --[[Info]]
-  -- interface between exposed function and callback manager
-  -- validates user input 
-  --[[Inputs]] 
+function CallbackManager.HandleRegistration(action, registryType, id, callback, unitType, filter)
+    --[[Inputs]] 
   -- *action* (bool) - true/registration or false/unregistration
   --[[Output]]
   -- *resultCode* (number) - code to determine outcome of (un-)registration
   local CM = CallbackManager
-  local resultCode = CALLBACK_RESULT_SUCCESS 
-
   --- verify user inputs 
-  if not IsString(id) then resultCode = CALLBACK_RESULT_INVALID_NAME end 
-  if not CM.IsValidUnitType(unitType) then resultCode = CALLBACK_RESULT_INVALID_UNITTYPE end
-  if not IsFunction(callback) then resultCode = CALLBACK_RESULT_INVALID_CALLBACK end 
-  if not CM.IsValidFilter( reqistryType, filterTable) then result = CALLBACK_RESULT_INVALID_FILTER end 
+  if not IsString(id) then return CALLBACK_RESULT_INVALID_NAME end 
+  if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end 
+  if unitType == "all" or not unitType then   -- if unitType is nil or "all" execute function for "player" and "group"
+    CM.HandleRegistration(action, registryType, id, callback, "player", filterTable)
+    CM.HandleRegistration(action, registryType, id, callback, "group", filterTable)
+    return
+  end
+  if not CM.IsValidUnitType(unitType) then return CALLBACK_RESULT_INVALID_UNITTYPE end
+  if IsTable( filter ) then 
+    for _, filterId in pairs(filter) do 
+      CM.HandleRegistration(action, registryType, id, callback, unitType, filterId)
+    end
+  end
+  if not CM.IsValidFilter(filter) then return CALLBACK_RESULT_INVALID_FILTER end
 
   --- determine the correct registry table name 
-  local registryName = CM.BuildRegistryName( registryType, unitType, filterTable)
-
+  local registryName = CM.BuildRegistryName( registryType, unitType, filter)
+  
   --- perform (un-)registration
-  if resultCode == CALLBACK_RESULT_SUCCESS then 
-    for _,filter in pairs(filterTable) do 
-      if action then 
-        resultCode = CM.RegisterCallback( registryName, filter, id, callback )
-      else
-        resultCode = CM.UnregisterCallback( registryType, filter, id )
-      end 
-    end
+  for _,filter in pairs(filterTable) do 
+    if action then 
+      if not CM.RegisterCallback( registryName, id, callback, filter ) then return CALLBACK_RESULT_DUPLICATE_NAME end 
+    else
+      if not CM.UnregisterCallback( registryName, id, filter ) then return CALLBACK_RESULT_UNKNOWN_NAME end
+    end 
   end
 
   if SV.debug then 
@@ -320,15 +322,12 @@ function CallbackManager.HandleRegistration(action, registryType, unitType, id, 
     debugMsg( zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", CM.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
   end
 
-  --- provide result code to caller
-  return resultCode
+  return CALLBACK_RESULT_SUCCESS
 end   -- End of HandleRegistration
 
 
-
-function CallbackManager.RegisterCallback( registryName, filter, id, callback )
+function CallbackManager.RegisterCallback( registryName, id, callback, filter )
   local CM = CallbackManager
-
   --- getting list of already registered callbacks 
   local callbackList
   if filter then  
@@ -338,84 +337,48 @@ function CallbackManager.RegisterCallback( registryName, filter, id, callback )
   else 
     callbackList = CM.registry[name]
   end
-
   --- verifying name is unique 
-  if callbackList[id] then return CALLBACK_RESULT_DUPLICATE_NAME end
-  
+  if callbackList[id] then return false end
   --- add callback to list
   callbackList[id] = callback 
-  return CALLBACK_RESULT_SUCCESS
+  return true
 end   -- End of RegisterCallback
 
 
-
-function CallbackManager.UnregisterCallback( registryName, filter, id )  
+function CallbackManager.UnregisterCallback( registryName, id, filter )  
   local callbackList 
-
   --- verify that name exists
-  if not callbackList[id] then return CALLBACK_RESULT_UNKNOWN_NAME end 
-
+  if not callbackList[id] then return false end 
   --- remove callback from list 
   callbackList[id] = nil 
-  return CALLBACK_RESULT_SUCCESS
+  return true
 end   -- End of UnregisterCallback
 
 
 function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
   local CM = CallbackManager
-  local name = CM.BuildRegistryName( registryType, unitType, filter) 
-  local callbackList = {}
 
-  -- get list of callbacks 
-  if filter then 
-    if CM.registry[name][filter] then  -- check if any entries for filter exist
-      callbackList = CM.registry[name][filter] -- filtered case
-    end
-  else 
-    callbackList = CM.registry[name] -- non filtered case
-  end 
-
-  -- debug of registryName and filter (if existing)
   if SV.debug then 
-    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)..")" or "") )
+    debugMsg(zo_strformat("FireCallbacks for <<1>><<2>> <<3>>", unitType, registryType, filter and "("..tostring(filter)..")" or "") )
   end
 
-    -- early out if no callbacks exist 
-    if ZO_IsTableEmpty(callbackList) then return end 
+  local name 
+  local callbackList
 
-  -- fire all callbacks with provided arguments 
+  --- execute callbacks of general list
+  name = CM.BuildRegistryName( registryType, unitType) 
+  callbackList = CM.registry[name]
   for _, callback in pairs( callbackList ) do 
-    callback(...) 
+    if not ZO_IsTableEmpty(callbackList) then callback(...) end
   end
-end   -- End of FireCallbacks
 
-
-
-function CallbackManager.FireCallbacks_Old( registryType, unitType, filter, ...)  
-  local CM = CallbackManager
-  local name = CM.BuildRegistryName( registryType, unitType, filter) 
-  local callbackList = {}
-
-  -- get list of callbacks 
+  --- execute callbacks for filter (optional) 
   if filter then 
-    if CM.registry[name][filter] then  -- check if any entries for filter exist
-      callbackList = CM.registry[name][filter] -- filtered case
+    name = CM.BuildRegistryName( registryType, unitType, filter) 
+    callbackList = CM.registry[name][filter]
+    for _, callback in pairs( callbackList ) do 
+      if not ZO_IsTableEmpty(callbackList) then callback(...) end
     end
-  else 
-    callbackList = CM.registry[name] -- non filtered case
-  end 
-
-  -- debug of registryName and filter (if existing)
-  if SV.debug then 
-    debugMsg(zo_strformat("FireCallbacks for ><<1>>< <<2>>", name, filter and "("..tostring(filter)..")" or "") )
-  end
-
-    -- early out if no callbacks exist 
-    if ZO_IsTableEmpty(callbackList) then return end 
-
-  -- fire all callbacks with provided arguments 
-  for _, callback in pairs( callbackList ) do 
-    callback(...) 
   end
 end   -- End of FireCallbacks
 
@@ -442,13 +405,8 @@ function SetDetector:New( unitType, unitTag )
     self.debug = false 
   end
   self.unitType = unitType or "empty"
-
-  self.setData = initSetData or {} --- Needed? 
-
   self.numEquip = {}
   self.activeOnBar = {}
-
-  self.setChanges = {} --- needed? 
   return self
 end
 
@@ -567,19 +525,20 @@ function SetDetector:ReceiveData( numEquipData, unitTag )
     d(self.setChanges)
     d("---------- end: setChanges")
   end
-  --self:FireCallbacks() 
+
+  if not ZO_IsTableEmpty(self.setChanges) then 
+    self:FireCallbacksForSetChanges() 
+  end
 end
 
 
-function SetDetector:FireCallbacks() 
-
-
-
-  for setId, changeType in pairs(self.lastChanges) do 
-    CallbackManager.FireCallbacks("SetChange", self.unitType, nil, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
-    CallbackManager.FireCallbacks("SetChange", self.unitType, setId, changeType, setId, self.unitTag, self.active["body"], self.active["front"], self.active["back"]) 
+function SetDetector:FireCallbacksForSetChange() 
+  if self.debug then devMsg("SD - "..self.unitType, "fire callbacks")
+  for setId, changeType in pairs(self.setChanges) do 
+    CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
+      ..changeType, setId, self.unitTag, 
+      ..self.activeOnBar[setId]["body"], self.activeOnBar[setId]["front"], self.activeOnBar[setId]["back"] ) 
   end
-  CallbackManager.FireCallbacks("DataUpdate", "player")
 end
 
 
@@ -902,9 +861,9 @@ end
 
 --[[ Exposed Functions of CallbackManager ]]
 --- User Input: 
---    1. unitType (string - case sensitive): "player" or "group" 
---    2. id (string - case sensitive): unique name (for each registryType/unitType) 
---    3. callback (function): called when appropriate callbacks fire
+--    1. id (string - case sensitive): unique name (for each registryType/unitType) 
+--    2. callback (function): called when appropriate callbacks fire
+--    3. unitType:nilable (string - case sensitive): "player" or "group" or "all" (nil = "all") 
 --    4. filter:nilable (optional for "SetChange") - table of filter values (setId), for registration or unregistration  
 
 --EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
@@ -928,7 +887,9 @@ function LibSetDetection.UnregisterSetChange( ... )
 end
 
 
-
+--- different trigger for player and group 
+-- player when slots change (ToDo) 
+-- group when number at any bar changes
 function LibSetDetection.RegisterForDataUpdate( ... ) 
   return CallbackManager.HandleRegistrations( true, "DataUpdate", ...)
 end
