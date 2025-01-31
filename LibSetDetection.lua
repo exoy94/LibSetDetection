@@ -245,11 +245,11 @@ CallbackManager.registry = {
     ["playerSetChange"] = {}, 
     ["playerSetChangeFiltered"] = {}, 
     ["playerDataUpdate"] = {},
-    ["playerDataUpdateFiltered"] = {},  
+ --   ["playerDataUpdateFiltered"] = {},  
     ["groupSetChange"] = {}, 
     ["groupSetChangeFiltered"] = {},
     ["groupDataUpdate"] = {},
-    ["groupDataUpdateFiltered"] = {},
+--    ["groupDataUpdateFiltered"] = {},
   }
 
 
@@ -259,8 +259,12 @@ function CallbackManager.IsValidUnitType( unitType )
 end
 
 
-function CallbackManager.IsValidFilter( filter) 
-  if not filter then return true end -- filter is nilable
+function CallbackManager.IsValidFilter( filter, registryType) 
+  -- filter is nilable, i.e. no filter is provided
+  if not filter then return true end 
+  -- filter are only applicable to "SetChange" events
+  if registryType == "DataUpdate" and filter then return false end 
+  -- filter can be a setId (number) or table of setIds
   if IsNumber(filter) then return true 
   if IsTable(filter) then 
     for _, filterId in pairs(filter) do 
@@ -272,45 +276,66 @@ function CallbackManager.IsValidFilter( filter)
 end   
 
 
-function CallbackManager.BuildRegistryName( registryType, unitType, filterTable ) 
+
+function CallbackManager.BuildRegistryName( registryType, unitType, hasFilter ) 
   -- dynamically building name of table in registry
   -- adds suffix "Filtered" if filter exists
-  return zo_strformat("<<1>><<2>><<3>>", unitType, registryType, filterTable and "Filtered" or "")
+  return zo_strformat("<<1>><<2>><<3>>", unitType, registryType, hasFilter and "Filtered" or "")
 end 
 
 
+
+function CallbackManager.GetCallbackList(registryName, filter)
+  local CM = CallbackManager
+  if filter then  
+    -- initializes filter subTable 
+    CM.registry[registryName][filter] = CM.registry[registryName][filter] or {} 
+    return CM.registry[registryName][filter] 
+  else 
+    return CM.registry[name]
+  end
+end
+
+
+
 function CallbackManager.HandleRegistration(action, registryType, id, callback, unitType, filter)
-    --[[Inputs]] 
-  -- *action* (bool) - true/registration or false/unregistration
-  --[[Output]]
-  -- *resultCode* (number) - code to determine outcome of (un-)registration
+  --[[Inputs]] -- *action* (bool) - true/registration or false/unregistration
+  --[[Output]] -- *resultCode* (number) - code to determine outcome of (un-)registration
   local CM = CallbackManager
   --- verify user inputs 
   if not IsString(id) then return CALLBACK_RESULT_INVALID_NAME end 
   if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end 
   if unitType == "all" or not unitType then   -- if unitType is nil or "all" execute function for "player" and "group"
-    CM.HandleRegistration(action, registryType, id, callback, "player", filterTable)
-    CM.HandleRegistration(action, registryType, id, callback, "group", filterTable)
-    return
+    local resultPlayer = CM.HandleRegistration(action, registryType, id, callback, "player", filterTable)
+    local resultGroup = CM.HandleRegistration(action, registryType, id, callback, "group", filterTable)
+    return resultPlayer, resultGroup
   end
   if not CM.IsValidUnitType(unitType) then return CALLBACK_RESULT_INVALID_UNITTYPE end
-  if IsTable( filter ) then 
-    for _, filterId in pairs(filter) do 
-      CM.HandleRegistration(action, registryType, id, callback, unitType, filterId)
-    end
-  end
-  if not CM.IsValidFilter(filter) then return CALLBACK_RESULT_INVALID_FILTER end
-
+  if not CM.IsValidFilter(filter, registryType) then return CALLBACK_RESULT_INVALID_FILTER end
   --- determine the correct registry table name 
   local registryName = CM.BuildRegistryName( registryType, unitType, filter)
-  
-  --- perform (un-)registration
-  for _,filter in pairs(filterTable) do 
+
+  if filter 
+    if IsNumber(filter) then filter = {filter} end 
+    for _, filterId in pairs(filter) do 
+      local callbackList = CM.GetCallbackList( registryName, filter ) 
+      if action then 
+        if callbackList[id] then return CALLBACK_RESULT_DUPLICATE_NAME end
+        callbackList[id] = callback 
+      else 
+        if not callbackList[id] then return return CALLBACK_RESULT_UNKNOWN_NAME end 
+        callbackList[id] = nil
+      end 
+    end
+  else 
+    local callbackList = CM.GetCallbackList( registryName ) 
     if action then 
-      if not CM.RegisterCallback( registryName, id, callback, filter ) then return CALLBACK_RESULT_DUPLICATE_NAME end 
-    else
-      if not CM.UnregisterCallback( registryName, id, filter ) then return CALLBACK_RESULT_UNKNOWN_NAME end
-    end 
+      if callbackList[id] then return CALLBACK_RESULT_DUPLICATE_NAME end
+      callbackList[id] = callback 
+    else 
+      if not callbackList[id] then return return CALLBACK_RESULT_UNKNOWN_NAME end 
+      callbackList[id] = nil
+    end  
   end
 
   if SV.debug then 
@@ -321,38 +346,11 @@ function CallbackManager.HandleRegistration(action, registryType, id, callback, 
     filterStr = filterStr.."}"
     debugMsg( zo_strformat("<<1>>: <<2>>register, <<3>>, <<4>>, <<5>>, <<6>>", CM.results[resultCode], action and "" or "un", registryType, unitType, id, filterStr) )  
   end
-
   return CALLBACK_RESULT_SUCCESS
 end   -- End of HandleRegistration
 
 
-function CallbackManager.RegisterCallback( registryName, id, callback, filter )
-  local CM = CallbackManager
-  --- getting list of already registered callbacks 
-  local callbackList
-  if filter then  
-    -- initializes filter subTable 
-    CM.registry[registryName][filter] = CM.registry[registryName][filter] or {} 
-    callbackList = CM.registry[registryName][filter] 
-  else 
-    callbackList = CM.registry[name]
-  end
-  --- verifying name is unique 
-  if callbackList[id] then return false end
-  --- add callback to list
-  callbackList[id] = callback 
-  return true
-end   -- End of RegisterCallback
 
-
-function CallbackManager.UnregisterCallback( registryName, id, filter )  
-  local callbackList 
-  --- verify that name exists
-  if not callbackList[id] then return false end 
-  --- remove callback from list 
-  callbackList[id] = nil 
-  return true
-end   -- End of UnregisterCallback
 
 
 function CallbackManager.FireCallbacks( registryType, unitType, filter, ...)  
@@ -412,7 +410,7 @@ end
 
 
 function SetDetector:AnalyseData()
-  if self.debug then devMsg("SD - "..self.unitType, "analyse data") end
+  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "analyse data") end
   self.activeOnBar = {}
   --- handle perfect/unperfect
   local numEquipTemp = {}
@@ -484,7 +482,7 @@ end
 
 
 function SetDetector:ResetArchive() 
-  if self.debug then devMsg( "SD- "..self.unitType, "archive reset") end
+  if self.debug and ExoyDev then devMsg( "SD- "..self.unitType, "archive reset") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
@@ -492,40 +490,33 @@ end
 
 
 function SetDetector:ReceiveData( numEquipData, unitTag )
-
   self:ResetArchive() 
   for setId, numEquip in pairs( numEquipData ) do 
      self.numEquip[setId] = numEquip
   end
-
-  if self.debug then 
-    devMsg("SD - "..self.unitType, "numEquip - archive")
-    d(self.archive.numEquip)
-    d("---------- end: numEquip archive")
-    devMsg("SD - "..self.unitType, "numEquip - current")
-    d(self.numEquip)
-    d("---------- end: numEquip - current ")
-  end
-
+    if self.debug and ExoyDev then 
+      devMsg("SD - "..self.unitType, "numEquip - archive")
+      d(self.archive.numEquip)
+      d("---------- end: numEquip archive")
+      devMsg("SD - "..self.unitType, "numEquip - current")
+      d(self.numEquip)
+      d("---------- end: numEquip - current ")
+    end
   self:AnalyseData() 
-
-  if self.debug then 
-    devMsg("SD - "..self.unitType, "activeOnBar - archive")
-    d(self.archive.activeOnBar)
-    d("---------- end: activeOnBar - archive")
-    devMsg("SD - "..self.unitType, "activeOnBar - current")
-    d(self.activeOnBar)
-    d("---------- end: activeOnBar - current ")
-  end
-
+    if self.debug and ExoyDev then 
+      devMsg("SD - "..self.unitType, "activeOnBar - archive")
+      d(self.archive.activeOnBar)
+      d("---------- end: activeOnBar - archive")
+      devMsg("SD - "..self.unitType, "activeOnBar - current")
+      d(self.activeOnBar)
+      d("---------- end: activeOnBar - current ")
+    end
   self:DetermineChanges() 
-  
-  if self.debug then 
-    devMsg("SD - "..self.unitType, "setChanges")
-    d(self.setChanges)
-    d("---------- end: setChanges")
-  end
-
+    if self.debug and ExoyDev then 
+      devMsg("SD - "..self.unitType, "setChanges")
+      d(self.setChanges)
+      d("---------- end: setChanges")
+    end
   if not ZO_IsTableEmpty(self.setChanges) then 
     self:FireCallbacksForSetChanges() 
   end
@@ -533,7 +524,7 @@ end
 
 
 function SetDetector:FireCallbacksForSetChange() 
-  if self.debug then devMsg("SD - "..self.unitType, "fire callbacks")
+  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks")
   for setId, changeType in pairs(self.setChanges) do 
     CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
       ..changeType, setId, self.unitTag, 
@@ -706,7 +697,7 @@ end
 
 
 function SlotManager:UpdateLoadout() 
-  if self.debug then devMsg( "SM", "loadout update" ) end
+  if self.debug and ExoyDev then devMsg( "SM", "loadout update" ) end
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
@@ -715,7 +706,7 @@ end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  if self.debug then devMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
+  if self.debug and ExoyDev then devMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
@@ -741,12 +732,12 @@ end
 function SlotManager:ResetQueue() 
   if self.queueId then 
     zo_removeCallLater( self.queueId )
-    if self.debug then devMsg("SM", "reset queue") end 
+    if self.debug and ExoyDev then devMsg("SM", "reset queue") end 
   else 
-    if self.debug then devMsg("SM", "start queue") end
+    if self.debug and ExoyDev then devMsg("SM", "start queue") end
   end
   self.queueId = zo_callLater( function() 
-    if self.debug then devMsg("SM", "end queue") end
+    if self.debug and ExoyDev then devMsg("SM", "end queue") end
     self:SendData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -762,12 +753,13 @@ function SlotManager:SendData()
       numEquipData[setId][barName] = numEquipData[setId][barName] + 1
     end
   end 
-  if self.debug then 
+  if self.debug and ExoyDev then 
     devMsg("SM", "relay data")
     d(numEquipData) 
     d("---------- end: relay data")
   end
   PlayerSets:ReceiveData( numEquipData ) 
+  CallbackManager:FireCallbacks( "DataUpdate", "player")
 end
 
 
