@@ -399,9 +399,13 @@ end
 function SetDetector:ReceiveData( numEquipData, unitTag )
   self.unitTag = unitTag
   self:InitTables() 
+  --- deserilize data
   for setId, numEquip in pairs( numEquipData ) do 
      self.numEquip[setId] = numEquip
   end
+  --- convert to unperfected setIds 
+  self:ConvertDataToUnperfected() 
+
     if self.debug and ExoyDev then 
       devMsg("SD - "..self.unitType, "numEquip - archive")
       d(self.archive.numEquip)
@@ -410,6 +414,7 @@ function SetDetector:ReceiveData( numEquipData, unitTag )
       d(self.numEquip)
       d("---------- end: numEquip - current ")
     end
+
   self:AnalyseData() 
     if self.debug and ExoyDev then 
       devMsg("SD - "..self.unitType, "activeOnBar - archive")
@@ -432,7 +437,7 @@ end
 
 
 function SetDetector:InitTables() 
-  if self.debug and ExoyDev then devMsg( "SD- "..self.unitType, "initialize tables") end
+  if self.debug and ExoyDev then devMsg( "SD- "..self.unitTag, "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
@@ -441,7 +446,50 @@ function SetDetector:InitTables()
 end
 
 
-function SetDetector:AnalyseData()
+function SetDetector:ConvertDataToUnperfected() 
+  
+  local numEquipTemp = ZO_ShallowTableCopy( self.numEquip )  
+  local listOfPerfected = {}
+  -- check, if any perfected sets are equipped
+  for setId, _ in pairs( self.numEquip ) do 
+    if GetItemSetUnperfectedSetId(setId) ~= 0 then 
+      table.insert( listOfPerfected, setId ) 
+    end
+  end
+  for _, perfSetId in ipairs( listOfPerfected ) do 
+    local unperfSetId = GetItemSetUnperfectedSetId(setId)
+    if not numEquipTemp[unperfSetId] then 
+      -- if no unperfected pieces are equipped, overwrite it with perfected
+      numEquipTemp[unperfSetId] = self.numEquip[perfSetId] 
+    else 
+      -- if unperfected pieces are equipped, add perfected ones
+      for barName, numEquip in pairs( self.numEquip ) do 
+        numEquipTemp[unperfSetId][barName] = numEquipTemp[unperfSetId][barName] + numEquip
+      end
+    end
+    -- remove entry for perfected set
+    numEquipTemp[perfSetId] = nil 
+  end
+  -- overwrite numEquip tables with convertedData
+  self.numEquip = numEquipTemp
+  -- debug
+  if self.debug and ExoyDev then 
+    devMsg("SD - "..self.unitTag, "convert to unperfected")
+    for _, id in ipairs(listOfPerfected) do 
+      d( zo_strformat("converted <<1>> to <<2>>"), id, GetItemSetUnperfectedSetId(setId) )
+    end
+  end  
+end
+
+
+function SetDetector:AnalyseData() 
+  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "analyse data") end
+
+
+end
+
+
+function SetDetector:AnalyseData_old()
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "analyse data") end
   self.activeOnBar = {}
   --- handle perfect/unperfect
@@ -473,7 +521,7 @@ function SetDetector:AnalyseData()
 end
 
 
-function SetDetector:DetermineChanges() 
+function SetDetector:DetermineChanges_old() 
   local setChanges = {}
   for setId, active in pairs(self.activeOnBar) do
     local function GetActiveState( t )
