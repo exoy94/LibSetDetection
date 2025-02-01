@@ -206,7 +206,7 @@ local function ConvertToUnperfected( setId )
   end
 end
 
-local function ExtendNumEquip( numEquip ) 
+local function ExtendNumEquipData( numEquip ) 
   local numEquipExtended = ZO_ShallowTableCopy( numEquip )  
   for setId, _ in pairs( numEquip ) do
     numEquipExtended[setId].setName = GetSetName(setId)
@@ -215,6 +215,10 @@ local function ExtendNumEquip( numEquip )
   return numEquipExtended
 end
 
+local function DecodeChangeType( changeType ) 
+  local changeStr = {"unequipped", "equipped", "updated"}
+  return changeStr[changeType]
+end
 
 --[[ ----------- ]]
 --[[ -- Debug -- ]] 
@@ -361,7 +365,7 @@ function CallbackManager.FireCallbacks( eventType, unitType, setId, ... )
     -- isActiveOnBack
     if CM.debug and ExoyDev then 
       local p = {...}
-      local msgStart = zo_strformat( "<<1>> <<2>> <<3>>: ", p[3], eventType, p[1] ) 
+      local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], DecodeChangeType(p[1]), p[1] ) 
       local msgEnd = zo_strformat("<<1>> (<<2>>) - {<<3>>, <<4>>, <<5>>}", 
         GetSetName( p[2] ), p[2], p[4] and 1 or 0, p[5] and 1 or 0, p[6] and 1 or 0 )
       devMsg("CM", msgStart..msgEnd )
@@ -392,123 +396,87 @@ function SetDetector:New( unitType, unitTag )
   self.unitType = unitType or "empty"
   self.numEquip = {} 
   self.activeOnBar = {}
+  self.activeState = {}
   return self
 end
 
 
-function SetDetector:ReceiveData( numEquipData, unitTag )
-  self.unitTag = unitTag
-  self:InitTables() 
-  --- deserilize data
-  for setId, numEquip in pairs( numEquipData ) do 
-     self.numEquip[setId] = numEquip
-  end
-  --- convert to unperfected setIds 
-  self:ConvertDataToUnperfected() 
-
-    if self.debug and ExoyDev then 
-      devMsg("SD - "..self.unitType, "numEquip - archive")
-      d(self.archive.numEquip)
-      d("---------- end: numEquip archive")
-      devMsg("SD - "..self.unitType, "numEquip - current")
-      d(self.numEquip)
-      d("---------- end: numEquip - current ")
-    end
-
-  self:AnalyseData() 
-    if self.debug and ExoyDev then 
-      devMsg("SD - "..self.unitType, "activeOnBar - archive")
-      d(self.archive.activeOnBar)
-      d("---------- end: activeOnBar - archive")
-      devMsg("SD - "..self.unitType, "activeOnBar - current")
-      d(self.activeOnBar)
-      d("---------- end: activeOnBar - current ")
-    end
-  local setChanges = self:DetermineChanges() 
-    if self.debug and ExoyDev then 
-      devMsg("SD - "..self.unitType, "setChanges")
-      d(setChanges)
-      d("---------- end: setChanges")
-    end
-  if not ZO_IsTableEmpty(setChanges) then 
-    self:FireCallbacks( setChanges ) 
-  end
+function SetDetector:UpdateData( newData, unitTag )
+  if self.debug and ExoyDev then  devMsg( "SD", "update data ("..unitTag..")" ) end
+  self.unitTag = unitTag -- ensures always correct unitTag
+  self:InitTables( newData )  -- updates archive and resets current 
+  self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
+  self:AnalyseData()  -- determines, which sets are active 
+  local changeList = self:DetermineChanges()  -- determine, what has changed (un-)equip/ update
+  self:FireCallbacks( changeList )  -- fire callbacks according to detected changes
 end
 
 
-function SetDetector:InitTables() 
-  if self.debug and ExoyDev then devMsg( "SD- "..self.unitTag, "initialize tables") end
+function SetDetector:InitTables( data ) 
+  if self.debug and ExoyDev then devMsg( "SD", "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
-  self.numEquip = {} 
+  self.archive["activeState"] = ZO_ShallowTableCopy(self.activeState)
+  self.numEquip = data
   self.activeOnBar = {}
+  self.activeState = {}
 end
 
 
 function SetDetector:ConvertDataToUnperfected() 
-  
-  local numEquipTemp = ZO_ShallowTableCopy( self.numEquip )  
+  -- initialize local tables
+  local numEquipTemp = {}
   local listOfPerfected = {}
+  local listOfNormal = {}
   -- check, if any perfected sets are equipped
   for setId, _ in pairs( self.numEquip ) do 
     if GetItemSetUnperfectedSetId(setId) ~= 0 then 
       table.insert( listOfPerfected, setId ) 
+    else 
+      table.insert( listOfNormal, setId )
     end
   end
+  -- add all normal sets to temporary 
+  for _, setId in ipairs( listOfNormal ) do 
+    numEquipTemp[setId] = ZO_ShallowTableCopy(self.numEquip[setId]) 
+  end
+  -- add perfected count to corresponding unperfected version  
   for _, perfSetId in ipairs( listOfPerfected ) do 
-    local unperfSetId = GetItemSetUnperfectedSetId(setId)
+    local unperfSetId = GetItemSetUnperfectedSetId(perfSetId) 
     if not numEquipTemp[unperfSetId] then 
-      -- if no unperfected pieces are equipped, overwrite it with perfected
-      numEquipTemp[unperfSetId] = self.numEquip[perfSetId] 
+    -- if no unperfected pieces are equipped, overwrite it with perfected
+      numEquipTemp[unperfSetId] = ZO_ShallowTableCopy(self.numEquip[perfSetId])
     else 
-      -- if unperfected pieces are equipped, add perfected ones
-      for barName, numEquip in pairs( self.numEquip ) do 
+    -- if unperfected pieces are equipped, add perfected ones
+      for barName, numEquip in pairs( self.numEquip[perfSetId] ) do 
         numEquipTemp[unperfSetId][barName] = numEquipTemp[unperfSetId][barName] + numEquip
       end
     end
-    -- remove entry for perfected set
-    numEquipTemp[perfSetId] = nil 
   end
-  -- overwrite numEquip tables with convertedData
-  self.numEquip = numEquipTemp
   -- debug
   if self.debug and ExoyDev then 
-    devMsg("SD - "..self.unitTag, "convert to unperfected")
+    devMsg( "SD", "convert data to unperfected")
+    d("raw data:")
+    d(ExtendNumEquipData(self.numEquip) )
+    d("------------ End of raw data")
+    d("converted data:")
+    d(ExtendNumEquipData(numEquipTemp) )
+    d("------------ End of converted data")
+    d("conversion list:")
     for _, id in ipairs(listOfPerfected) do 
-      d( zo_strformat("converted <<1>> to <<2>>"), id, GetItemSetUnperfectedSetId(setId) )
+      d( zo_strformat("<<1>> --> <<2>> (<<3>>)", id, GetItemSetUnperfectedSetId(id), GetSetName(id) ) )
     end
-  end  
+    d("------------ End of conversion list")
+  end
+  -- overwrite data with converted data
+  self.numEquip = nil 
+  self.numEquip = ZO_ShallowTableCopy(numEquipTemp)
 end
 
 
 function SetDetector:AnalyseData() 
-  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "analyse data") end
-
-
-end
-
-
-function SetDetector:AnalyseData_old()
-  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "analyse data") end
-  self.activeOnBar = {}
-  --- handle perfect/unperfect
-  local numEquipTemp = {}
-  for setId, numEquip in pairs(self.numEquip) do 
-    local unperfSetId = GetItemSetUnperfectedSetId(setId)
-    if unperfSetId ~= 0 then 
-      numEquipTemp[unperfSetId] = numEquipTemp[unperfSetId] or {["body"]=0, ["back"]=0, ["front"]=0}
-      for barName, _ in pairs(barList) do 
-        numEquipTemp[unperfSetId][barName] = numEquipTemp[unperfSetId][barName] + numEquip[barName] 
-      end
-    elseif setId ~= 0 then -- ignore no sets
-      -- making sure values for unperfected set are not overwritten
-      -- if it is done after the perfected
-      numEquipTemp[setId] = numEquipTemp[setId] or numEquip 
-    end
-  end
-  --- determine active sets
-  for setId, numEquip in pairs( numEquipTemp ) do  
+  for setId, numEquip in pairs( self.numEquip ) do  
     local active = {} 
     local numFront = numEquip["body"] + numEquip["front"] 
     local numBack = numEquip["body"] + numEquip["back"] 
@@ -518,57 +486,92 @@ function SetDetector:AnalyseData_old()
     active["body"] = numEquip["body"] >= maxEquip
     self.activeOnBar[setId] = active 
   end
+  if self.debug and ExoyDev then 
+    devMsg("SD", "analyse data") 
+    d("current activeOnBar list")
+    d( self.activeOnBar )
+    d("------------ End of current activeOnBar list")
+  end
 end
 
 
-function SetDetector:DetermineChanges_old() 
-  local setChanges = {}
-  for setId, active in pairs(self.activeOnBar) do
-    local function GetActiveState( t )
-      -- active state refers to if the set is active on any bar 
-      -- result false = all false 
-      -- result true = one is true
-      local isActive = false
-      for _, isActiveOnBar in pairs( t )do
-        isActive = isActive or isActiveOnBar
-      end
-      return isActive
+function SetDetector:DetermineChanges() 
+  -- returns true if set is active on any bar, otherwise returns false 
+  local function GetActiveState( activeTable ) 
+    local isActive = false
+    for _, isActiveOnBar in pairs( activeTable )do
+      isActive = isActive or isActiveOnBar
     end
-    local oldState = self.archive.activeOnBar[setId] and GetActiveState(self.archive.activeOnBar[setId]) or false
-    local newState = GetActiveState( active ) 
-    if oldState ~= newState then
-      setChanges[setId] = newState and LSD_CHANGE_TYPE_EQUIPPED or LSD_CHANGE_TYPE_UNEQUIPPED 
-    elseif newState then
-      -- check if the activeBar changed without changing the overall active state
-      -- this can only occure, if the set is active on at least one bar
-      local updated = false 
-      for barName, _ in pairs (barList) do 
-        if self.archive.activeOnBar[setId][barName] ~= self.activeOnBar[setId][barName] then 
-          updated = true
-          break
+    return isActive
+  end
+
+  -- create table with current active states 
+  for setId, activeTable in pairs( self.activeOnBar ) do 
+    self.activeState[setId] = GetActiveState(activeTable) 
+  end
+
+  local changeList = {}
+  -- check all current sets 
+  for setId, activeState in pairs( self.activeState ) do 
+    if activeState then -- if they are currently active:
+      if self.archive.activeState[setId] then   -- if they were aleady active
+        for barName, _ in pairs (barList) do    -- check if active for each individual bar
+          if self.archive.activeOnBar[setId][barName] ~= self.activeOnBar[setId][barName] then 
+            changeList[setId] = LSD_CHANGE_TYPE_UPDATE  -- if at least one bar has changed --> updated
+            break
+          end
         end
+      else   -- and weren't active before -> equipped
+        changeList[setId] = LSD_CHANGE_TYPE_EQUIPPED
       end
-      setChanges[setId] = updated and LSD_CHANGE_TYPE_UPDATE or nil 
     end
-    return setChanges
   end
-
-  -- check if any set is no longer included in current table 
-  -- this means it was unequipped 
-  for setId, active in pairs(self.archive.activeOnBar) do 
-    if not self.activeOnBar[setId] then diff[setId] = false end 
+  -- check, if all previously active sets are still active, otherwise -> unequipped
+  for setId, archiveActiveState in pairs( self.archive.activeState ) do 
+    if archiveActiveState and not self.activeState[setId] then 
+      changeList[setId] = LSD_CHANGE_TYPE_UNEQUIPPED
+    end
   end
+  if self.debug and ExoyDev then 
+    devMsg("SD", "determine changes") 
+    d("archive activeOnBar list ")
+    d( self.archive.activeOnBar )
+    d("------------ End of archive activeOnBar list")
+    d("archive activeState")
+    d(self.archive.activeState)
+    d("------------ End of archive activeState")
+    d("current activeState")
+    d(self.activeState)
+    d("------------ End of current activeState list ")
+    d("changeList") 
+    local changeListDecoded = {}
+    for setId, changeType in pairs(changeList) do 
+      changeListDecoded[setId] = DecodeChangeType(changeType)
+    end
+    d(changeListDecoded)
+    d("------------ End of changeList")
+  end
+  return changeList 
 end
 
-
-function SetDetector:FireCallbacks( setChanges ) 
+function SetDetector:FireCallbacks( changeList ) 
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks") end
-  for setId, changeType in pairs( setChanges ) do 
+  
+  -- initialize, because activeOnBar does not exist for completely unquipped sets
+  local activeOnBody = false
+  local activeOnFront = false
+  local activeOnBack = false 
+ 
+  for setId, changeType in pairs( changeList ) do 
+    -- update activeOnBar bools for existing sets
+    if changeType == LSD_CHANGE_TYPE_EQUIPPED or changeType == LSD_CHANGE_TYPE_UPDATE then 
+      activeOnBody = self.activeOnBar[setId]["body"]
+      activeOnFront = self.activeOnBar[setId]["front"]
+      activeOnBack =  self.activeOnBar[setId]["back"]
+    end
+
     CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
-     changeType, setId,   self.unitTag, 
-     self.activeOnBar[setId]["body"], 
-     self.activeOnBar[setId]["front"], 
-     self.activeOnBar[setId]["back"] ) 
+     changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack) 
   end
 end
 
@@ -796,13 +799,13 @@ function SlotManager:SendData()
   numEquip[0] = nil
   if self.debug and ExoyDev then 
     devMsg("SM", "relay data")
-    d( ExtendNumEquip(numEquip) )
+    d( ExtendNumEquipData(numEquip) )
     d("---------- end: relay data")
   end
-  PlayerSets:ReceiveData( numEquip, "player" ) 
+  PlayerSets:UpdateData( numEquip, "player" ) 
   CallbackManager.FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
-    ExtendNumEquip( numEquip),   
+    ExtendNumEquipData( numEquip),   
     self.equippedGear ) 
 end
 
