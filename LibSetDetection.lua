@@ -53,6 +53,7 @@ or it returns just the list with slotId to setId
 LibSetDetection = LibSetDetection or {}
 local libName = "LibSetDetection"
 local libVersion = 4
+local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 local SV 
 
@@ -64,7 +65,6 @@ local CallbackManager = {}  -- CM
 local BroadcastManager = {} -- BM
 local SetDetector = {}      -- SD 
 local PlayerSets = {}       -- PS
-local GroupSets = {}        -- GS
 local GroupManager = {}     -- GM
 
 local SlotManager = {}      -- SM       
@@ -206,9 +206,10 @@ local function ConvertToUnperfected( setId )
   end
 end
 
+--- rum arbeit
 local function ExtendNumEquipData( numEquip ) 
-  local numEquipExtended = ZO_ShallowTableCopy( numEquip )  
-  for setId, _ in pairs( numEquip ) do
+  local numEquipExtended = ZO_DeepTableCopy(numEquip)
+  for setId, _ in pairs( numEquip) do
     numEquipExtended[setId].setName = GetSetName(setId)
     numEquipExtended[setId].maxEquip = GetMaxEquip(setId) 
   end
@@ -356,6 +357,14 @@ function CallbackManager.FireCallbacks( eventType, unitType, setId, ... )
     -- unitTag
     -- numEquipExtended
     -- equippedGear
+    if CM.debug and ExoyDev then 
+      local p = {...} 
+      devMsg("CM", zo_strformat("DataUpdate for <<1>>", p[1]) )
+      d(p[2])
+      d("---") 
+      d(p[3])
+      d("---")
+    end
   elseif eventType == "SetChange" then 
     -- changeType 
     -- unperfSetId 
@@ -363,7 +372,7 @@ function CallbackManager.FireCallbacks( eventType, unitType, setId, ... )
     -- isActiveOnBody 
     -- isActiveOnFront
     -- isActiveOnBack
-    if CM.debug and ExoyDev then 
+    if CM.debug and ExoyDev then --debug for "SetChange Event"
       local p = {...}
       local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], DecodeChangeType(p[1]), p[1] ) 
       local msgEnd = zo_strformat("<<1>> (<<2>>) - {<<3>>, <<4>>, <<5>>}", 
@@ -388,10 +397,10 @@ function SetDetector:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = true
+    self.debug = false
   end
   if unitType == "group" then 
-    self.debug = false 
+    self.debug = true
   end
   self.unitType = unitType or "empty"
   self.numEquip = {} 
@@ -582,6 +591,19 @@ end
 --[[ %% ------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+GroupManager.groupSets = {}
+
+function GroupManager.UpdateData( charName, unitTag, data ) 
+
+  if GroupManager.groupSets[charName] then 
+    GroupManager.groupSets[charName]:UpdateData( data, unitTag ) 
+  else 
+    GroupManager.groupSets[charName] = SetDetector:New("group")
+    GroupManager.groupSets[charName]:UpdateData( data, unitTag )
+  end
+
+end
+
 --GroupSets[charName] = SetManager:New("group")  --- This will be put in GroupSets 
 
 -- GroupManager activates/deactives functionality when a player is joining/leaving a group 
@@ -624,8 +646,8 @@ end
 
   local DataMsg = {} 
   function BroadcastManager.Initialize() 
-    -- BroadcastManager.LGB = LibGroupBroadcast 
-    -- BroadcastManager.DataMsg = DataMsg:Inialize() 
+    BroadcastManager.LGB = LibGroupBroadcast 
+    BroadcastManager.DataMsg = DataMsg:Initialize() 
   end
 
 
@@ -634,15 +656,17 @@ end
 --[[ -------------- ]]
 
 function DataMsg:Initialize() 
-  self.handler = BroadcastManager.LGB:DefineMessageHandler( 1, "LibSetDetection_Data" )
-  local dataArray = StructuredArrayField:New( "SetData", {minSize = 1, maxSize = 8} )
-  dataArray:AddField( NumericField:New("setId", {min=0, max=1023} ) ) 
-  dataArray:AddField( NumericField:New("numBody", {min=0, max=10} ) )
-  dataArray:AddField( NumericField:New("numFront", {min=0, max=2}) )
-  dataArray:AddField( NumericField:New("numBack", {min=0, max=2}) )
-  self.handler:AddField( dataArray )
-  self.handler:Finalize() 
-  self.handler:OnData( function() self:OnIncomingMsg() end ) 
+  local LGB = LibGroupBroadcast
+  self.handler = LGB:DeclareProtocol(42, "LibSetDetection_Data")
+  local dataArray = LGB.CreateArrayField(LGB.CreateTableField("SetData", {
+      LGB.CreateNumericField("id", { min = 0, max = 1023 }),
+      LGB.CreateNumericField("body", { min = 0, max = 10 }),
+      LGB.CreateNumericField("front", { min = 0, max = 2 }),
+      LGB.CreateNumericField("back", { min = 0, max = 2 }),
+    }), { minSize = 1, maxSize = 8 })
+  self.handler:AddField(dataArray)
+  self.handler:OnData(function(unitTag, data) self:OnIncomingMsg(unitTag, data) end)
+  self.handler:Finalize()
   return self
 end
 
@@ -676,10 +700,11 @@ function DataMsg:AddToQueue(setId, setData )
   self.buffer[setId] = setData
 end
 
-function DataMsg:SendCurrentSetup() 
-  local currentSetup -- request current setup
-  local data = self:SerilizeData( currentSetup ) 
-  self.handler:Send( data ) 
+function DataMsg:SendCurrentSetup( numEquip ) 
+  --- why doe I get extended data, when the DataUpdate Event is happening? 
+  local data = self:SerilizeData( numEquip ) 
+  local sendData = {["SetData"] = {data[1]} }
+  self.handler:Send( sendData ) 
 end
 
 function DataMsg:SerilizeData( data ) 
@@ -687,34 +712,41 @@ function DataMsg:SerilizeData( data )
   local formattedData = {}
   for setId, setData in pairs( data ) do 
     table.insert(formattedData, {
-      setId = setId, 
-      numBody = setData.numBody, 
-      numFront = setData.numFront, 
-      numBack = setData.numBack,
+      id = setId, 
+      body = setData.body, 
+      front = setData.front, 
+      back = setData.back,
     } )
   end
   return formattedData
 end
 
 function DataMsg:DeserilizeData( rawData ) 
-  local data 
-  for _, setData in ipairs(rawData) do 
-    data[setData.setId] = {
-      ["numBody"] = setData.numBody, 
-      ["numFront"] = setData.numFront, 
-      ["numBack"] = setData.numBack, 
+  local data = {}
+  for _, setData in ipairs(rawData) do  
+    data[setData.id] = {
+      ["body"] = setData.body, 
+      ["front"] = setData.front, 
+      ["back"] = setData.back,
     }
   end  
   return data
 end
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
-  local charName = GetUnitName("unitTag")
-  if GetUnitName("player") == charName then 
-    return --- detected msg send by myself (ToDo)
+  local charName = GetUnitName(unitTag)
+  local data = self:DeserilizeData(rawData.SetData)
+  d("message received") 
+  d(rawData) 
+  d(data)
+  if charName == playerName then 
+    GroupManager.UpdateData( charName, unitTag, data ) 
+    --- detected a messsage was send 
+  else 
+
+    --- send data to group manager 
+    GroupManager.UpdateData( charName, unitTag, data ) 
   end
-  local data = self:DeserilizeData(rawData)
-  --- send data to group/set manager api 
 end
 
 --[[ -------------------- ]]
@@ -802,10 +834,11 @@ function SlotManager:SendData()
     d( ExtendNumEquipData(numEquip) )
     d("---------- end: relay data")
   end
-  PlayerSets:UpdateData( numEquip, "player" ) 
+  --PlayerSets:UpdateData( numEquip, "player" ) 
+  --BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
   CallbackManager.FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
-    ExtendNumEquipData( numEquip),   
+    ExtendNumEquipData( numEquip ),   
     self.equippedGear ) 
 end
 
