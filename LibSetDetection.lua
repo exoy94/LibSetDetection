@@ -4,51 +4,6 @@
 
 --- check if the setId is provided when the mystical is equipped, that disables all set effects 
 
---- maybe add an determine changes in the SlotManger .... happens often to me, that I switch back and forth between two pieces. 
---- if this happens the lib should not do anything else 
---[[ 
-  * so a table of the new setup, which is constantly updated with any slot update and compared to the current setup 
-  * if something goes back, it will be removed again from that list 
-  * so any further actions will only be done, if the table is not empty at the time of the "Transmission Call"
-  * this should happen independently of update all or update non 
-  * this means i need to make sure the lib initializes correctly. because there is a case, where I have nothing equipped. 
-  * so the actual setup is identical to the template setup 
-  * I probably need a proper initialization procedure anyways, cause I need to estables the state of the data share anyways 
-]]
-
- 
-
---[[
-EventDataUpdate( newData, diffData )
-both data are probably just going to be the *setData* table
-([setId] = {numBody, numFront, numBack} )
--- anything more specific put limitations on the use message 
-
--- triggers, if any data change. This includes the changes by EventSetChange 
--- but also includes changes in the setup that do not result in an EventSetChange 
---- intented for addons which keep track of more things, e.g. "has a meaningful" setup 
-
-
-returns either, the setData (in which case I can add a setId as an additional filter)
-or it returns just the list with slotId to setId 
--- i currently tend towards the first option. it makes the information between player and 
--- groupmember more consistant. the only meaningful application I see is a very detailed analysis 
--- of the setup of the player (information for group member not available) 
--- this would only be relevant with a very in depth analysis of the usefullness of a setup, 
--- with the only example I can currently think of is, that you want to detect that for example you were 
--- light armor on armor pieces and medium armor on jewlery and it should be the other way arround 
---- not sure, if for this very specific case I just provide an additional api for the player 
-
---- GetMaxEquipThreshold (that function would probably the place to add an overwrite for shattered fate?!) 
-  -- but it should probably not be a setting for the user, cuz different addons might have different use cases 
-  -- so i either make the decision for for this set and future set, that i overwrite the max equipped and determine 
-  -- the set as active as soon it hits the first threshold (how would I detect if more thresholds are reached and how would i inform the user? ) 
-  -- it will probably get to the point, where the addons interested in this must do at least some additional manual work, but I should aim for 
-  -- some way to at least address some way to be covered with the events, so addons need not constantly checking and all do the same thing 
-  --- maybe some extra api for sets with exceptions? -- maybe an additional variable provided by the setChange event "isSpecial" 
-  --- and then some API where you get additional information for a certain setId if it is special (the returned data could be unique for different special sets)
-]]
-
 
 LibSetDetection = LibSetDetection or {}
 local libName = "LibSetDetection"
@@ -63,10 +18,9 @@ local SV
  
 local CallbackManager = {}  -- CM 
 local BroadcastManager = {} -- BM
-local SetDetector = {}      -- SD 
-local PlayerSets = {}       -- PS
+local SetManager = {}      -- SD 
 local GroupManager = {}     -- GM
-
+local PlayerSets = {}       -- PS
 local SlotManager = {}      -- SM       
 local Development = {}      -- Dev
 
@@ -193,7 +147,15 @@ local function GetSetName( setId )
 end 
 
 local function GetMaxEquip( setId )
+  local exception = {
+    [695]= 5, ---check id
+  }
+  
   local _, _, _, _, _, maxEquip = GetItemSetInfo( setId )
+
+  if exception[setId] then
+    maxEquip = exception[setId]
+  end
   return maxEquip
 end
 
@@ -206,7 +168,6 @@ local function ConvertToUnperfected( setId )
   end
 end
 
---- rum arbeit
 local function ExtendNumEquipData( numEquip ) 
   local numEquipExtended = ZO_DeepTableCopy(numEquip)
   for setId, _ in pairs( numEquip) do
@@ -214,11 +175,6 @@ local function ExtendNumEquipData( numEquip )
     numEquipExtended[setId].maxEquip = GetMaxEquip(setId) 
   end
   return numEquipExtended
-end
-
-local function DecodeChangeType( changeType ) 
-  local changeStr = {"unequipped", "equipped", "updated"}
-  return changeStr[changeType]
 end
 
 --[[ ----------- ]]
@@ -232,6 +188,11 @@ end
 
 local function devMsg(id, msg) 
   d( zo_strformat("[<<1>> LSD - <<2>>] <<3>>", GetTimeString(), id, msg) )  
+end
+
+local function DecodeChangeType( changeType ) 
+  local changeStr = {"unequipped", "equipped", "updated"}
+  return changeStr[changeType]
 end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -387,20 +348,20 @@ end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
---[[ %% -- Set Detector -- %% ]]
+--[[ %% -- Set Manager --- %% ]]
 --[[ %% ------------------ %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 
-SetDetector.__index = SetDetector 
+SetManager.__index = SetManager 
 
-function SetDetector:New( unitType, unitTag )
+function SetManager:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = false
+    self.debug = false    --- entity debug toogle
   end
   if unitType == "group" then 
-    self.debug = true
+    self.debug = true     --- entity debug toogle
   end
   self.unitType = unitType or "empty"
   self.numEquip = {} 
@@ -410,7 +371,7 @@ function SetDetector:New( unitType, unitTag )
 end
 
 
-function SetDetector:UpdateData( newData, unitTag )
+function SetManager:UpdateData( newData, unitTag )
   if self.debug and ExoyDev then  devMsg( "SD", "update data ("..unitTag..")" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
   self:InitTables( newData )  -- updates archive and resets current 
@@ -421,7 +382,7 @@ function SetDetector:UpdateData( newData, unitTag )
 end
 
 
-function SetDetector:InitTables( data ) 
+function SetManager:InitTables( data ) 
   if self.debug and ExoyDev then devMsg( "SD", "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
@@ -433,7 +394,7 @@ function SetDetector:InitTables( data )
 end
 
 
-function SetDetector:ConvertDataToUnperfected() 
+function SetManager:ConvertDataToUnperfected() 
   -- initialize local tables
   local numEquipTemp = {}
   local listOfPerfected = {}
@@ -484,7 +445,7 @@ function SetDetector:ConvertDataToUnperfected()
 end
 
 
-function SetDetector:AnalyseData() 
+function SetManager:AnalyseData() 
   for setId, numEquip in pairs( self.numEquip ) do  
     local active = {} 
     local numFront = numEquip["body"] + numEquip["front"] 
@@ -504,7 +465,7 @@ function SetDetector:AnalyseData()
 end
 
 
-function SetDetector:DetermineChanges() 
+function SetManager:DetermineChanges() 
   -- returns true if set is active on any bar, otherwise returns false 
   local function GetActiveState( activeTable ) 
     local isActive = false
@@ -513,15 +474,13 @@ function SetDetector:DetermineChanges()
     end
     return isActive
   end
-
   -- create table with current active states 
   for setId, activeTable in pairs( self.activeOnBar ) do 
     self.activeState[setId] = GetActiveState(activeTable) 
   end
-
+  -- create table with changes 
   local changeList = {}
-  -- check all current sets 
-  for setId, activeState in pairs( self.activeState ) do 
+  for setId, activeState in pairs( self.activeState ) do -- check all equipped sets
     if activeState then -- if they are currently active:
       if self.archive.activeState[setId] then   -- if they were aleady active
         for barName, _ in pairs (barList) do    -- check if active for each individual bar
@@ -563,26 +522,34 @@ function SetDetector:DetermineChanges()
   return changeList 
 end
 
-function SetDetector:FireCallbacks( changeList ) 
+
+
+function SetManager:FireCallbacks( changeList ) 
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks") end
-  
-  -- initialize, because activeOnBar does not exist for completely unquipped sets
-  local activeOnBody = false
-  local activeOnFront = false
-  local activeOnBack = false 
- 
   for setId, changeType in pairs( changeList ) do 
+     -- initialize, because activeOnBar does not exist for completely unquipped sets
+    local activeOnBody = false
+    local activeOnFront = false
+    local activeOnBack = false 
     -- update activeOnBar bools for existing sets
     if changeType == LSD_CHANGE_TYPE_EQUIPPED or changeType == LSD_CHANGE_TYPE_UPDATE then 
       activeOnBody = self.activeOnBar[setId]["body"]
       activeOnFront = self.activeOnBar[setId]["front"]
       activeOnBack =  self.activeOnBar[setId]["back"]
     end
-
     CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
-     changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack) 
+      changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack) 
   end
 end
+
+
+function SetManager:HasSet(setId) 
+  local activeState = self.activeState[setId] or false 
+  local activeOnBody = self.activeOnBar[setId] and self.activeOnBar["body"] or false 
+  local activeOnFront = self.activeOnBar[setId] and self.activeOnBar["front"] or false 
+  local activeOnBack = self.activeOnBar[setId] and self.activeOnBar["back"] or false 
+  return activeState, activeOnBody, activeOnFront, activeOnBack
+end 
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -591,25 +558,46 @@ end
 --[[ %% ------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
-GroupManager.groupSets = {}
+function GroupManager:Initialize() 
+  self.debug = true
+  self.groupSets = {}
 
-function GroupManager.UpdateData( charName, unitTag, data ) 
-
-  if GroupManager.groupSets[charName] then 
-    GroupManager.groupSets[charName]:UpdateData( data, unitTag ) 
-  else 
-    GroupManager.groupSets[charName] = SetDetector:New("group")
-    GroupManager.groupSets[charName]:UpdateData( data, unitTag )
+  local function OnGroupUpdate() 
+    d("group update occured")
   end
+
+
+
+  --- Events 
+  EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, OnGroupUpdate)
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, self:OnGroupMemberJoined)
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, self:OnGroupMemberLeft)
 
 end
 
---GroupSets[charName] = SetManager:New("group")  --- This will be put in GroupSets 
+
+function GroupManager:OnGroupMemberJoined(_, charName) 
+  d("MemberJoined") 
+  d(charName)
+end
+
+
+function GroupManager:OnGroupMemberLeft(_, charName)
+
+
+
+function GroupManager.UpdateData( charName, unitTag, data ) 
+  if GroupManager.groupSets[charName] then 
+    GroupManager.groupSets[charName]:UpdateData( data, unitTag ) 
+  else 
+    GroupManager.groupSets[charName] = SetManager:New("group")
+    GroupManager.groupSets[charName]:UpdateData( data, unitTag )
+  end
+end
 
 -- GroupManager activates/deactives functionality when a player is joining/leaving a group 
 -- or group members change 
 -- needs to make sure, companions do not cause any problems  
--- will stand in direct contact with the broadcast manager to keep track of the state of things for group member 
 -- will initialize data clean up when group members leave or the player leaves a group all together 
 -- (even if somebody rejoints again, there could have been a set change in the mean time, so i always have to check anyways)
 
@@ -644,18 +632,16 @@ end
   -- function to convert player data to send data 
   -- api for information about group 
 
-  local DataMsg = {} 
-  function BroadcastManager.Initialize() 
-    BroadcastManager.LGB = LibGroupBroadcast 
-    BroadcastManager.DataMsg = DataMsg:Initialize() 
-  end
+
 
 
 --[[ -------------- ]]
 --[[ -- Data Msg -- ]]
 --[[ -------------- ]]
 
-function DataMsg:Initialize() 
+DataMsg = {}
+
+function DataMsg:Initialize() --- entity debug toogle
   local LGB = LibGroupBroadcast
   self.handler = LGB:DeclareProtocol(42, "LibSetDetection_Data")
   local dataArray = LGB.CreateArrayField(LGB.CreateTableField("SetData", {
@@ -665,49 +651,19 @@ function DataMsg:Initialize()
       LGB.CreateNumericField("back", { min = 0, max = 2 }),
     }), { minSize = 1, maxSize = 8 })
   self.handler:AddField(dataArray)
-  self.handler:OnData(function(unitTag, data) self:OnIncomingMsg(unitTag, data) end)
+  self.handler:OnData(function(unitTag, data) self.OnIncomingMsg(unitTag, data) end)
   self.handler:Finalize()
   return self
 end
 
-function DataMsg:StartQueue() 
-  -- start callLater for send 
-  self.queue = zo_callLater( self.EndQueue, self.queueDuration )   
-end
-
-function DataMsg:UpdateQueue() 
-  zo_removeCallLater( self.queue ) 
-  self.queue = zo_callLater( self.EndQueue, self.queueDuration )
-end
-
-function DataMsg:EndQueue() 
-  local data = self:SerilizeData(self.buffer) 
-  self.handler:Send( data ) 
-  self:CleanQueue() 
-end
-
-function DataMsg:CleanQueue() 
-  self.buffer = {}  -- reset buffer for data transmission
-  self.queue = nil  -- delete entry of callLater id 
-end
-
-function DataMsg:AddToQueue(setId, setData ) 
-  if self.queue then 
-    self:UpdateQueue() 
-  else 
-    self:StartQueue() 
-  end 
-  self.buffer[setId] = setData
-end
-
-function DataMsg:SendCurrentSetup( numEquip ) 
+function DataMsg.SendSetup( numEquip ) 
   --- why doe I get extended data, when the DataUpdate Event is happening? 
-  local data = self:SerilizeData( numEquip ) 
+  local data = DataMsg.SerilizeData( numEquip ) 
   local sendData = {["SetData"] = {data[1]} }
-  self.handler:Send( sendData ) 
+  DataMsg.handler:Send( sendData ) 
 end
 
-function DataMsg:SerilizeData( data ) 
+function DataMsg.SerilizeData( data ) 
   -- format data for data broadcast
   local formattedData = {}
   for setId, setData in pairs( data ) do 
@@ -721,7 +677,7 @@ function DataMsg:SerilizeData( data )
   return formattedData
 end
 
-function DataMsg:DeserilizeData( rawData ) 
+function DataMsg.DeserilizeData( rawData ) 
   local data = {}
   for _, setData in ipairs(rawData) do  
     data[setData.id] = {
@@ -733,25 +689,22 @@ function DataMsg:DeserilizeData( rawData )
   return data
 end
 
-function DataMsg:OnIncomingMsg(unitTag, rawData) 
+function DataMsg.OnIncomingMsg(unitTag, rawData) 
   local charName = GetUnitName(unitTag)
-  local data = self:DeserilizeData(rawData.SetData)
-  d("message received") 
-  d(rawData) 
-  d(data)
+  local data = DataMsg.DeserilizeData(rawData.SetData)
   if charName == playerName then 
     GroupManager.UpdateData( charName, unitTag, data ) 
-    --- detected a messsage was send 
   else 
-
-    --- send data to group manager 
     GroupManager.UpdateData( charName, unitTag, data ) 
   end
 end
 
---[[ -------------------- ]]
---[[ -- End of DataMsg -- ]]
---[[ -------------------- ]]
+--[[ ----- End of DataMsg ----- ]]
+
+function BroadcastManager:Initialize() 
+  self.DataMsg = DataMsg:Initialize() 
+end
+
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -762,7 +715,7 @@ end
 
 
 function SlotManager:Initialize() 
-  self.debug = false
+  self.debug = false   --- entity debug toogle
   self.equippedGear = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
@@ -819,7 +772,7 @@ function SlotManager:ResetQueue()
 end
 
 
-function SlotManager:SendData() 
+function SlotManager:SendData() ---rename
   local numEquip = {} 
   for barName, _ in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
@@ -834,8 +787,8 @@ function SlotManager:SendData()
     d( ExtendNumEquipData(numEquip) )
     d("---------- end: relay data")
   end
-  --PlayerSets:UpdateData( numEquip, "player" ) 
-  --BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
+  PlayerSets:UpdateData( numEquip, "player" ) 
+  BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
   CallbackManager.FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
@@ -872,12 +825,13 @@ local function Initialize()
     ["debug"] = false, 
   }
   SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
-  SV.debug = true
-  SV.dev = true
+  
+  BroadcastManager:Initialize() 
+  GroupManager:Initialize()
   SlotManager:Initialize() 
-  BroadcastManager.Initialize() 
 
-  PlayerSets = SetDetector:New("player") 
+
+  PlayerSets = SetManager:New("player") 
 
   --- Register Events 
   EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, OnSlotUpdate )
@@ -923,11 +877,13 @@ function LibSetDetection.GetUnitEquippedSets( unitTag )
   -- euippedOnBody, equippedOnFront, equippedOnBack --- probably processing on the fly
 end
 
-
-function LibSetDetection.HasSomebodySet( setId, unitType ) 
-  -- check, if somebody in the group has a specific set 
-  -- unit: optional: 
-  -- if nil then check both types 
+function LibSetDetection.HasUnitSet( unitTag, setId )
+  local charName = GetUnitName( unitTag ) 
+  if charName == playerName then 
+    return PlayerSets:HasSet( setId ) 
+  else 
+    return GroupManager.groupSets[charName]:HasSetId( setId ) 
+  end
 end
 
 
