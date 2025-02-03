@@ -3,6 +3,11 @@
 --[[ ------------------- ]]
 
 --- check if the setId is provided when the mystical is equipped, that disables all set effects 
+--- referenzen mit doppel punkt übergeben nur pointer, mit punkt hängt es davon ab, ob der tabellen 
+---   eintrag vorher schon existiert (dann referenz auf den eintrag), ansonsten ist es nur ein sybolic value 
+---   und es wird jedesmal danach gesucht 
+
+
 
 
 LibSetDetection = LibSetDetection or {}
@@ -28,6 +33,12 @@ local Development = {}      -- Dev
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
+local function Template_BarListSubtables( init, initFront, initBack ) 
+  local _initBody = init or 0 
+  local _initFront = initFront or _initBody 
+  local _initBack = initBack or _initBody
+  return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
+end
 
 
 --[[ ------------------- ]]
@@ -45,11 +56,7 @@ local function MergeSlotTables(t1, t2)
 	return t
 end
 
-local barList = {
-  ["front"] = HOTBAR_CATEGORY_PRIMARY,
-  ["back"] = HOTBAR_CATEGORY_BACKUP,
-  ["body"] = -1,
-}
+local barList = {"body", "front", "back"}
 
 local slotList = {
   ["body"] = {
@@ -483,7 +490,7 @@ function SetManager:DetermineChanges()
   for setId, activeState in pairs( self.activeState ) do -- check all equipped sets
     if activeState then -- if they are currently active:
       if self.archive.activeState[setId] then   -- if they were aleady active
-        for barName, _ in pairs (barList) do    -- check if active for each individual bar
+        for _, barName in pairs (barList) do    -- check if active for each individual bar
           if self.archive.activeOnBar[setId][barName] ~= self.activeOnBar[setId][barName] then 
             changeList[setId] = LSD_CHANGE_TYPE_UPDATE  -- if at least one bar has changed --> updated
             break
@@ -523,7 +530,6 @@ function SetManager:DetermineChanges()
 end
 
 
-
 function SetManager:FireCallbacks( changeList ) 
   if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
@@ -544,13 +550,40 @@ end
 
 
 function SetManager:HasSet(setId) 
-  local activeState = self.activeState[setId] or false 
-  local activeOnBody = self.activeOnBar[setId] and self.activeOnBar["body"] or false 
-  local activeOnFront = self.activeOnBar[setId] and self.activeOnBar["front"] or false 
-  local activeOnBack = self.activeOnBar[setId] and self.activeOnBar["back"] or false 
-  return activeState, activeOnBody, activeOnFront, activeOnBack
+  local _activeState = self.activeState[setId] or false 
+  local _activeOnBody = self.activeOnBar[setId] and self.activeOnBar["body"] or false 
+  local _activeOnFront = self.activeOnBar[setId] and self.activeOnBar["front"] or false 
+  local _activeOnBack = self.activeOnBar[setId] and self.activeOnBar["back"] or false 
+  return _activeState, _activeOnBody, _activeOnFront, _activeOnBack
 end 
 
+
+function SetManager:GetActiveSets()  
+  local _stateList = {}
+  local _onBarList = Template_BarListSubtables( {} ) 
+  for setId, activeState in pairs( self.activeState ) do 
+    table.insert(_stateList, setId)  
+    for _, barName in pairs(barList) do 
+      if self.activeOnBar[setId][barName] then 
+        table.insert(_onBarList[barName], setId)
+    end
+  end
+  return _stateList, _onBarList["body"], _onBarList["front"], _onBarList["back"]
+end
+
+
+function SetManager:GetNumEquip(setId)
+  local _numEquip = Template_BarListSubtables(0)
+  for _, barName in pairs(barList) do 
+    _numEquip[barName] = self.numEquip[setId][barName]
+  end
+  return _numEquip["body"], numEquip["front"], numEquip["back"]  
+end
+
+
+function SetManager:GetEquippedSets() 
+  return ExtendNumEquipData( self.numEquip )
+end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------- %% ]]
@@ -558,32 +591,49 @@ end
 --[[ %% ------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+
 function GroupManager:Initialize() 
   self.debug = true
   self.groupSets = {}
 
-  local function OnGroupUpdate() 
-    d("group update occured")
-  end
-
-
+  --- local functions reference 
+  local function _OnGroupUpdate() self:OnGroupMemberUpdate() end
+  local function _OnGroupMemberJoined(...) self:OnGroupMemberJoined(...) end
+  local function _OnGroupMemberLeft(...) self:OnGroupMemberLeft(...) end 
 
   --- Events 
-  EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, OnGroupUpdate)
-  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, self:OnGroupMemberJoined)
-  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, self:OnGroupMemberLeft)
+  EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, _OnGroupUpdate)
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, _OnGroupMemberJoined )
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, _OnGroupMemberLeft )
+end
 
+
+function GroupManager:OnGroupUpdate()
+  -- unitTags where changed, dont know yet if I need to do anything at that point 
 end
 
 
 function GroupManager:OnGroupMemberJoined(_, charName) 
-  d("MemberJoined") 
-  d(charName)
+  local unitName = zo_strformat( SI_UNIT_NAME, charName ) -- aligns format with unit name for unitTag
+  if unitName == playerName then 
+    --- can use to determine, that i either entered a group or created one 
+    --- when I join a group with members already, only ny name comes up 
+  else 
+    -- somebody else joined, not sure if I need to do anything 
+  end
 end
 
 
 function GroupManager:OnGroupMemberLeft(_, charName)
-
+  local unitName = zo_strformat( SI_UNIT_NAME, charName )   -- aligns format with unit name for unitTag
+  --- occurs when i leave group in some way 
+  --- when I leave, event is also triggered 
+  if charName == playerName then 
+    -- use this to clean everything else up, like sending data etc 
+  else 
+    -- use those events to clean up the member related tables 
+  end  
+end
 
 
 function GroupManager.UpdateData( charName, unitTag, data ) 
@@ -611,6 +661,8 @@ end
 --[[ %% -- BroadcastManager -- %% ]]
 --[[ %% ---------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+
 
 --- ToDo-List 
 -- Save variables for toggle 
@@ -642,6 +694,7 @@ end
 DataMsg = {}
 
 function DataMsg:Initialize() --- entity debug toogle
+  if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
   self.handler = LGB:DeclareProtocol(42, "LibSetDetection_Data")
   local dataArray = LGB.CreateArrayField(LGB.CreateTableField("SetData", {
@@ -651,10 +704,11 @@ function DataMsg:Initialize() --- entity debug toogle
       LGB.CreateNumericField("back", { min = 0, max = 2 }),
     }), { minSize = 1, maxSize = 8 })
   self.handler:AddField(dataArray)
-  self.handler:OnData(function(unitTag, data) self.OnIncomingMsg(unitTag, data) end)
+  self.handler:OnData( self.OnIncomingMsg )  
   self.handler:Finalize()
   return self
 end
+
 
 function DataMsg.SendSetup( numEquip ) 
   --- why doe I get extended data, when the DataUpdate Event is happening? 
@@ -662,6 +716,7 @@ function DataMsg.SendSetup( numEquip )
   local sendData = {["SetData"] = {data[1]} }
   DataMsg.handler:Send( sendData ) 
 end
+
 
 function DataMsg.SerilizeData( data ) 
   -- format data for data broadcast
@@ -677,6 +732,7 @@ function DataMsg.SerilizeData( data )
   return formattedData
 end
 
+
 function DataMsg.DeserilizeData( rawData ) 
   local data = {}
   for _, setData in ipairs(rawData) do  
@@ -689,6 +745,7 @@ function DataMsg.DeserilizeData( rawData )
   return data
 end
 
+
 function DataMsg.OnIncomingMsg(unitTag, rawData) 
   local charName = GetUnitName(unitTag)
   local data = DataMsg.DeserilizeData(rawData.SetData)
@@ -698,6 +755,8 @@ function DataMsg.OnIncomingMsg(unitTag, rawData)
     GroupManager.UpdateData( charName, unitTag, data ) 
   end
 end
+
+
 
 --[[ ----- End of DataMsg ----- ]]
 
@@ -774,10 +833,10 @@ end
 
 function SlotManager:SendData() ---rename
   local numEquip = {} 
-  for barName, _ in pairs(barList) do  -- body, front, back 
+  for _, barName in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedGear[slotId] 
-      numEquip[setId] = numEquip[setId] or { ["body"]=0, ["front"]=0, ["back"]=0 }
+      numEquip[setId] = numEquip[setId] or Template_BarListSubtables(0) 
       numEquip[setId][barName] = numEquip[setId][barName] + 1
     end
   end 
@@ -788,7 +847,7 @@ function SlotManager:SendData() ---rename
     d("---------- end: relay data")
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
-  BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
+  --BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
   CallbackManager.FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
@@ -864,27 +923,74 @@ function LibSetDetection.GetSetIdFromItemLink( itemlink )
   return setId
 end
 
+
 --- for both functions above, make unitTag:nilable and then 
 --- provide data for everybody? 
-function LibSetDetection.GetUnitActiveSets( unitTag )  
-  -- returns tables with setIds for 
-  -- activeOnBody, activeOnFront, activeOnBack   --- probably processing on the fly 
+local function GetSetManager(unitTag) 
+  local charName == GetUnitName( unitTag ) 
+  if charName == playerName then 
+    return PlayerSets
+  else 
+    return GroupManager:GetSetManager(charName) --- needed to make sure, i dont try to access non existing functions 
+  end
+end 
+
+function LibSetDetection.HasSet( unitTag, setId )
+  if unitTag then 
+    local SM = GetSetManager( unitTag ) 
+    return SM:HasSet(setId) 
+  else
+    --- pseudo code!!!
+    local _hasSetList 
+    for tag, _ in pairs(groupList) do
+      local SM = GetSetManager( tag )  
+      _hasSetList[ tag ] = SM:HasSet(setId) 
+    end
+  end
+end
+
+
+function LibSetDetection.GetNumEquip(unitTag) 
+  local SM = GetSetManager( unitTag ) 
+  return SM:GetNumEquip(setId) 
+end
+
+
+function LibSetDetection.GetEquippedSets(unitTag) 
+  local SM = GetSetManager( unitTag ) 
+  return SM:GetEquippedSets() 
+end
+
+
+local function GetSetManager(unitTag) 
+  local charName == GetUnitName( unitTag ) 
+  if charName == playerName then 
+    return PlayerSets
+  else 
+    return GroupManager:GetSetManager(charName) --- needed to make sure, i dont try to access non existing functions 
+  end
 end 
 
 
-function LibSetDetection.GetUnitEquippedSets( unitTag ) 
-  -- returns tables with setIds for
-  -- euippedOnBody, equippedOnFront, equippedOnBack --- probably processing on the fly
+local function ExposedSetManager(unitTag, setId, funcName)
+  local SM = GetSetManager( unitTag ) 
+  local self = SM
+  return SM[funcName](self, setId)
 end
 
-function LibSetDetection.HasUnitSet( unitTag, setId )
-  local charName = GetUnitName( unitTag ) 
-  if charName == playerName then 
-    return PlayerSets:HasSet( setId ) 
-  else 
-    return GroupManager.groupSets[charName]:HasSetId( setId ) 
-  end
+
+function LibSetDetection.HasSet( unitTag, setId )
+  return ExposedSetManager(unitTag, nil, "HasSet")  
 end
+
+
+function LibSetDetection.GetActiveSets(unitTag) 
+  return ExposedSetManager(unitTag, nil, "GetActiveSets")  
+end
+
+
+
+
 
 
 --[[ Exposed Functions of CallbackManager ]]
