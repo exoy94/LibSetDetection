@@ -104,18 +104,6 @@ local _CALLBACK_RESULT_INVALID_NAME = 4
 local _CALLBACK_RESULT_DUPLICATE_NAME = 5
 local _CALLBACK_RESULT_UNKNOWN_NAME = 6
 
-local _UNIT_TYPE_INVALID = 0 
-local _UNIT_TYPE_ALL = 1
-local _UNIT_TYPE_PLAYER = 2
-local _UNIT_TYPE_GROUP = 3
-local _UNIT_TYPE_GROUPMEMBER = 4
-
-local unitTypeList = {
-  ["all"] = _UNIT_TYPE_ALL, 
-  ["player"] = _UNIT_TYPE_PLAYER, 
-  ["group"] = _UNIT_TYPE_GROUP, 
-}
-
 
 --- change types for events (global) 
 LSD_CHANGE_TYPE_UNEQUIPPED = 1 
@@ -231,7 +219,15 @@ end
 -- *id* (string - case sensitive): unique name (for each registryType/unitType) 
 -- *filter*:nilable (if *registryType = "SetChange", needs to be numer or table of numbers (setIds) )
 
-CallbackManager.debug = true
+function CallbackManager:Initialize() 
+  self.debug = true 
+  self.registry = {
+    ["playerSetChange"] = {}, 
+    ["groupSetChange"] = {}, 
+    ["playerUpdateData"] = {}, 
+    ["groupUpdateData"] = {}, 
+  }
+end
 
 CallbackManager.results = {
   [CALLBACK_RESULT_SUCCESS] = "success",
@@ -243,13 +239,7 @@ CallbackManager.results = {
   [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
 }
 
---- registry initialization
-CallbackManager.registry = {
-  ["playerSetChange"] = {}, 
-  ["groupSetChange"] = {}, 
-  ["playerUpdateData"] = {}, 
-  ["groupUpdateData"] = {}, 
-}
+
 
 
 function CallbackManager.UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
@@ -262,8 +252,7 @@ function CallbackManager.UpdateRegistry(action, registryType, uniqueId, callback
   --- verify general user inputs
   if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end
   if not IsString(uniqueId) then return CALLBACK_RESULT_INVALID_NAME end 
-  local unitTypeList = { ["player"]=true, ["group"]=true } 
-  if not unitTypeList[unitType] then return CALLBACK_RESULT_INVALID_UNITTYPE end 
+  if not unitType == "player" or unitType == "group" then return CALLBACK_RESULT_INVALID_UNITTYPE end 
   --- set change registry
   local registryName = unitType..registryType
   if registryType == "SetChange" then 
@@ -948,53 +937,68 @@ EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 
-local function GetSetManager( unitType, groupTag )
-  if unitType == _UNIT_TYPE_PLAYER then 
-    return PlayerSets 
+local function ReadData( unitTag, setId, funcName ) 
+  local SM
+  if unitTag == "player" then 
+    SM = PlayerSets
   else 
-    return GroupManager:GetSetManager( groupTag )
-  end 
+    SM, resultCode = GroupManager:GetSetManager( unitTag ) 
+  return [funcName](SM, setId)
 end
 
 
-local function ExposeSetManager(unitTag, setId, funcName)
-  local function ProvideData( SM )  
-    return[funcName](SM, setId)
+local function AccessSetManager(unitTag, setId, funcName)
+
+  if unitTag == "all" or not unitTag then 
+    local playerData = {ReadData("player", setId, funcName)}
+    local groupData  = {AccessSetManager("group", setId, funcName)}
+    local combinedData = groupData  
+    combinedData.player = playerData 
+    return combinedData
   end
 
-  unitTag = unitTag or "player" -- default value for unitTag ("all" or "player")
-  --- todo validateUnitType: also account for specific group Tags (make an extra argument in function) 
-
-  local unitType, result = GetUnitType( unitTag ) 
-  if unitType == _UNIT_TYPE_INVALID then 
-
-  if result == _UNKNOWN_UNIT_TAG or result == _INVALID_TAG then  
-    -- get dummy set manager 
-    -- return dummy values, result 
+  if unitTag == "group" then 
+    local groupData = {} 
+    local groupResult = {}
+    for i=1,GetGroupSize() do 
+      local tag = GetGroupUnitTagByIndex( tag ) 
+      if IsUnitPlayer(tag) then 
+        groupData[tag] = {ReadData(tag, setId, funcName)}
+      end
+    end
+    return groupData
   end 
 
-  if unitType == _UNIT_TYPE_PLAYER then
-    return ProvideData( GetSetManager("player") )
-  end
-
-  local isGroupMember = --not empty string for GetUnitName(unitTag) 
-
-  if unitType == _UNIT_TYPE_GROUPMEMBER then 
-    return ProvideData( GetSetManager(unitTag) )
-  end 
-
-  local returnTable = {} 
-  for i=1,GetGroupSize() do 
-    local tag = GetGroupUnitTagByIndex(i) 
-    returnTable[tag] = ProvideData( GetSetManager(tag) )
-  end
-  if unitType == "all" then 
-    returnTable["player"] = ProvideData( GetSetManager("player") )
-  end 
-  return returnTable
-
+  -- validate unitTag by checken for name of corresponding unit
+  local unitName = GetUnitName(unitTag) 
+  if not unitName or unitName == "" then return nil end 
+    
+  return ReadData(unitTag, setId, funcName)
 end
 
+
+--- unit, group, all, player 
+
+-- unitType: "all", "player", "group" or a specific groupTag 
+
+function LibSetDetection.HasSet( unitTag, setId )
+  return AccessSetManager( unitTag, setId, "HasSet")
+end
+
+
+function LibSetDetection.GetActiveSets(unitTag) 
+  return AccessSetManager(unitTag, nil, "GetActiveSets")
+end
+
+
+function LibSetDetection.GetNumEquip(unitTag, setId) 
+  return AccessSetManager(unitTag, nil, "GetNumEquip")  
+end
+
+
+function LibSetDetection.GetEquippedSets(unitTag) 
+  return AccessSetManager(unitTag, nil, "GetEquippedSets")   
+end
 
 
 
@@ -1005,35 +1009,40 @@ function LibSetDetection.GetSetIdFromItemLink( itemlink )
 end
 
 
-
-
-
---- unit, group, all, player 
-
--- unitType: "all", "player", "group" or a specific groupTag 
-
-function LibSetDetection.HasSet( unitTag, setId )
-  return ExposeSetManager( unitTag, setId, "HasSet")  
+--- Advanced 
+function LibSetDetection.GetPlayerEquippedGear() 
+  return PlayerSets.equippedGear 
 end
 
 
-function LibSetDetection.GetActiveSets(unitTag) 
-  return ExposedSetManager(unitTag, nil, "GetActiveSets")  
+function LibSetDetection.GetUnitRawNumEquip() -- return data while still separating bettween normal and perf
 end
 
 
-function LibSetDetection.GetNumEquip(unitTag, setId) 
-  return ExposedSetManager(unitTag, nil, "GetNumEquip")  
+
+--- Legacy (only for player) 
+function LibSetDetection.GetEquippedSetsTable() 
+  local PS = PlayerSets
+  local returnTable = {}
+  for setId, _ in pairs( PlayerSets.activeState ) do 
+    local setData = {}
+    setData.name = GetSetName( setId ) 
+    setData.maxEquipped = GetMaxEquip( setId ) 
+    setData.numEquipped = PS.numEquip[setId] 
+    setData.activeBar = PS.activeOnBar[setId]
+    returnTable[setId] = setData 
+  end
+  return returnTable
 end
 
 
-function LibSetDetection.GetEquippedSets(unitTag) 
-  return ExposedSetManager(unitTag, nil, "GetEquippedSets")   
-end
+
+
 
 
 
 --[[ Exposed Functions of CallbackManager ]]
+
 --- User Input: 
 --    1. id (string - case sensitive): unique name (for each registryType/unitType) 
 --    2. callback (function): called when appropriate callbacks fire
