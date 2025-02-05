@@ -96,13 +96,26 @@ local twoHanderList = {
 }
 
 --- result code definition for callback manager
-local CALLBACK_RESULT_SUCCESS = 0 
-local CALLBACK_RESULT_INVALID_CALLBACK = 1 
-local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
-local CALLBACK_RESULT_INVALID_FILTER = 3
-local CALLBACK_RESULT_INVALID_NAME = 4 
-local CALLBACK_RESULT_DUPLICATE_NAME = 5
-local CALLBACK_RESULT_UNKNOWN_NAME = 6
+local _CALLBACK_RESULT_SUCCESS = 0 
+local _CALLBACK_RESULT_INVALID_CALLBACK = 1 
+local _CALLBACK_RESULT_INVALID_UNITTYPE = 2 
+local _CALLBACK_RESULT_INVALID_FILTER = 3
+local _CALLBACK_RESULT_INVALID_NAME = 4 
+local _CALLBACK_RESULT_DUPLICATE_NAME = 5
+local _CALLBACK_RESULT_UNKNOWN_NAME = 6
+
+local _UNIT_TYPE_INVALID = 0 
+local _UNIT_TYPE_ALL = 1
+local _UNIT_TYPE_PLAYER = 2
+local _UNIT_TYPE_GROUP = 3
+local _UNIT_TYPE_GROUPMEMBER = 4
+
+local unitTypeList = {
+  ["all"] = _UNIT_TYPE_ALL, 
+  ["player"] = _UNIT_TYPE_PLAYER, 
+  ["group"] = _UNIT_TYPE_GROUP, 
+}
+
 
 --- change types for events (global) 
 LSD_CHANGE_TYPE_UNEQUIPPED = 1 
@@ -133,6 +146,10 @@ end
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
+
+local function ConvertCharToUnitName( charName ) 
+  return zo_strformat( SI_UNIT_NAME, charName )
+end
 
 local function GetSetId( slotId )
   local _, _, _, _, _, setId = GetItemLinkSetInfo( GetItemLink(BAG_WORN, slotId) )
@@ -613,37 +630,50 @@ function GroupManager:OnGroupUpdate()
 end
 
 
-function GroupManager:OnGroupMemberJoined(_, charName) 
-  local unitName = zo_strformat( SI_UNIT_NAME, charName ) -- aligns format with unit name for unitTag
-  if unitName == playerName then 
+function GroupManager:OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
+  if isLocalPlayer then 
     --- can use to determine, that i either entered a group or created one 
     --- when I join a group with members already, only ny name comes up 
   else 
-    -- somebody else joined, not sure if I need to do anything 
+    local unitName = zo_strformat( SI_UNIT_NAME, charName ) -- aligns format with unit name for unitTag
+
   end
 end
 
 
-function GroupManager:OnGroupMemberLeft(_, charName)
-  local unitName = zo_strformat( SI_UNIT_NAME, charName )   -- aligns format with unit name for unitTag
-  --- occurs when i leave group in some way 
-  --- when I leave, event is also triggered 
-  if charName == playerName then 
-    -- use this to clean everything else up, like sending data etc 
+function GroupManager:OnGroupMemberLeft(_, charName, _, isLocalPlayer)
+  if isLocalPlayer then 
+
   else 
-    -- use those events to clean up the member related tables 
+    local unitName = zo_strformat( SI_UNIT_NAME, charName )   -- aligns format with unit name for unitTag
+    --- occurs when i leave group in some way 
+    --- when I leave, event is also triggered 
+      self.groupSets[unitName] = nil  -- remove SetManager instance
   end  
 end
 
 
-function GroupManager.UpdateData( charName, unitTag, data ) 
-  if GroupManager.groupSets[charName] then 
-    GroupManager.groupSets[charName]:UpdateData( data, unitTag ) 
+function GroupManager:UpdateSetData( charName, unitTag, data ) 
+  local _gs = self.groupSets  
+  if _gs[charName] then 
+    _gs[charName]:UpdateData( data, unitTag ) 
   else 
-    GroupManager.groupSets[charName] = SetManager:New("group")
-    GroupManager.groupSets[charName]:UpdateData( data, unitTag )
+    _gs[charName] = SetManager:New("group")
+    _gs[charName]:UpdateData( data, unitTag )
   end
 end
+
+
+function GroupManager:GetSetManager( charName ) 
+  local 
+  -- check if there exists a set manager 
+  if self.groupSets[charName] then 
+    return self.groupSet[charName]
+  else 
+    return DefaultSetManager --- entity, that returns default values for all tables 
+  end
+
+end 
 
 -- GroupManager activates/deactives functionality when a player is joining/leaving a group 
 -- or group members change 
@@ -917,6 +947,57 @@ EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 --[[ %% ----------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+
+local function GetSetManager( unitType, groupTag )
+  if unitType == _UNIT_TYPE_PLAYER then 
+    return PlayerSets 
+  else 
+    return GroupManager:GetSetManager( groupTag )
+  end 
+end
+
+
+local function ExposeSetManager(unitTag, setId, funcName)
+  local function ProvideData( SM )  
+    return[funcName](SM, setId)
+  end
+
+  unitTag = unitTag or "player" -- default value for unitTag ("all" or "player")
+  --- todo validateUnitType: also account for specific group Tags (make an extra argument in function) 
+
+  local unitType, result = GetUnitType( unitTag ) 
+  if unitType == _UNIT_TYPE_INVALID then 
+
+  if result == _UNKNOWN_UNIT_TAG or result == _INVALID_TAG then  
+    -- get dummy set manager 
+    -- return dummy values, result 
+  end 
+
+  if unitType == _UNIT_TYPE_PLAYER then
+    return ProvideData( GetSetManager("player") )
+  end
+
+  local isGroupMember = --not empty string for GetUnitName(unitTag) 
+
+  if unitType == _UNIT_TYPE_GROUPMEMBER then 
+    return ProvideData( GetSetManager(unitTag) )
+  end 
+
+  local returnTable = {} 
+  for i=1,GetGroupSize() do 
+    local tag = GetGroupUnitTagByIndex(i) 
+    returnTable[tag] = ProvideData( GetSetManager(tag) )
+  end
+  if unitType == "all" then 
+    returnTable["player"] = ProvideData( GetSetManager("player") )
+  end 
+  return returnTable
+
+end
+
+
+
+
 --- Utility
 function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
   local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
@@ -924,63 +1005,15 @@ function LibSetDetection.GetSetIdFromItemLink( itemlink )
 end
 
 
---- for both functions above, make unitTag:nilable and then 
---- provide data for everybody? 
-local function GetSetManager(unitTag) 
-  local charName == GetUnitName( unitTag ) 
-  if charName == playerName then 
-    return PlayerSets
-  else 
-    return GroupManager:GetSetManager(charName) --- needed to make sure, i dont try to access non existing functions 
-  end
-end 
+
+
+
+--- unit, group, all, player 
+
+-- unitType: "all", "player", "group" or a specific groupTag 
 
 function LibSetDetection.HasSet( unitTag, setId )
-  if unitTag then 
-    local SM = GetSetManager( unitTag ) 
-    return SM:HasSet(setId) 
-  else
-    --- pseudo code!!!
-    local _hasSetList 
-    for tag, _ in pairs(groupList) do
-      local SM = GetSetManager( tag )  
-      _hasSetList[ tag ] = SM:HasSet(setId) 
-    end
-  end
-end
-
-
-function LibSetDetection.GetNumEquip(unitTag) 
-  local SM = GetSetManager( unitTag ) 
-  return SM:GetNumEquip(setId) 
-end
-
-
-function LibSetDetection.GetEquippedSets(unitTag) 
-  local SM = GetSetManager( unitTag ) 
-  return SM:GetEquippedSets() 
-end
-
-
-local function GetSetManager(unitTag) 
-  local charName == GetUnitName( unitTag ) 
-  if charName == playerName then 
-    return PlayerSets
-  else 
-    return GroupManager:GetSetManager(charName) --- needed to make sure, i dont try to access non existing functions 
-  end
-end 
-
-
-local function ExposedSetManager(unitTag, setId, funcName)
-  local SM = GetSetManager( unitTag ) 
-  local self = SM
-  return SM[funcName](self, setId)
-end
-
-
-function LibSetDetection.HasSet( unitTag, setId )
-  return ExposedSetManager(unitTag, nil, "HasSet")  
+  return ExposeSetManager( unitTag, setId, "HasSet")  
 end
 
 
@@ -989,7 +1022,14 @@ function LibSetDetection.GetActiveSets(unitTag)
 end
 
 
+function LibSetDetection.GetNumEquip(unitTag, setId) 
+  return ExposedSetManager(unitTag, nil, "GetNumEquip")  
+end
 
+
+function LibSetDetection.GetEquippedSets(unitTag) 
+  return ExposedSetManager(unitTag, nil, "GetEquippedSets")   
+end
 
 
 
