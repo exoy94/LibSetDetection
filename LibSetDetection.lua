@@ -13,6 +13,7 @@
 LibSetDetection = LibSetDetection or {}
 local libName = "LibSetDetection"
 local libVersion = 4
+local libDebug = false 
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
@@ -95,13 +96,13 @@ local twoHanderList = {
 }
 
 --- result code definition for callback manager
-local _CALLBACK_RESULT_SUCCESS = 0 
-local _CALLBACK_RESULT_INVALID_CALLBACK = 1 
-local _CALLBACK_RESULT_INVALID_UNITTYPE = 2 
-local _CALLBACK_RESULT_INVALID_FILTER = 3
-local _CALLBACK_RESULT_INVALID_NAME = 4 
-local _CALLBACK_RESULT_DUPLICATE_NAME = 5
-local _CALLBACK_RESULT_UNKNOWN_NAME = 6
+local CALLBACK_RESULT_SUCCESS = 0 
+local CALLBACK_RESULT_INVALID_CALLBACK = 1 
+local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
+local CALLBACK_RESULT_INVALID_FILTER = 3
+local CALLBACK_RESULT_INVALID_NAME = 4 
+local CALLBACK_RESULT_DUPLICATE_NAME = 5
+local CALLBACK_RESULT_UNKNOWN_NAME = 6
 
 
 --- change types for events (global) 
@@ -282,9 +283,11 @@ function CallbackManager:UpdateSetChangeRegistry( action, registryName, uniqueId
   end
   --- update registry
   for _, filterId in pairs(filter) do 
-    local callbackList = self.registry[registryName][filterId] or {}
+    self.registry[registryName][filterId] = self.registry[registryName][filterId] or {}
+    local callbackList = self.registry[registryName][filterId]
     if action then    -- registration
       if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+      if self.debug then d(zo_strformat("Reigster '<<1>>' in <<2>> (<<3>>)", uniqueId, registryName, filterId)) end
       callbackList[uniqueId] = callback 
     else  -- unregistration
       if not callbackList[uniqueId] then return CALLBACK_RESULT_UNKNOWN_NAME end 
@@ -323,7 +326,7 @@ function CallbackManager:FireCallbacks( eventType, unitType, setId, ... )
 
   if eventType == "DataUpdate" then 
     -- unitTag, numEquipExtended, equippedGear
-    if self.debug and ExoyDev then 
+    if libDebug and self.debug then 
       local p = {...} 
       debugMsg("CM", zo_strformat("DataUpdate for <<1>>", p[1]) )
     end
@@ -331,7 +334,7 @@ function CallbackManager:FireCallbacks( eventType, unitType, setId, ... )
 
   elseif eventType == "SetChange" then 
     -- changeType, unperfSetId, unitTag, isActiveOnBody, isActiveOnFront, isActiveOnBack
-    if self.debug and ExoyDev then --debug for "SetChange Event"
+    if libDebug and self.debug then --debug for "SetChange Event"
       local p = {...}
       local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], DecodeChangeType(p[1]), p[1] ) 
       local msgEnd = zo_strformat("<<1>> (<<2>>) - {<<3>>, <<4>>, <<5>>}", 
@@ -357,7 +360,7 @@ function SetManager:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = false    --- entity debug toogle
+    self.debug = true    --- entity debug toogle
   end
   if unitType == "group" then 
     self.debug = true     --- entity debug toogle
@@ -371,7 +374,7 @@ end
 
 
 function SetManager:UpdateData( newData, unitTag )
-  if self.debug and ExoyDev then  debugMsg( "SD", "update data ("..unitTag..")" ) end
+  if libDebug and self.debug then  debugMsg( "SD", "update data ("..unitTag..")" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
   self:InitTables( newData )  -- updates archive and resets current 
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
@@ -382,7 +385,7 @@ end
 
 
 function SetManager:InitTables( data ) 
-  if self.debug and ExoyDev then debugMsg( "SD", "initialize tables") end
+  if libDebug and self.debug then debugMsg( "SD", "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
@@ -424,7 +427,7 @@ function SetManager:ConvertDataToUnperfected()
     end
   end
   -- debug
-  if self.debug and ExoyDev then 
+  if libDebug and self.debug then 
     debugMsg( "SD", "convert data to unperfected")
     d("raw data:")
     d(ExtendNumEquipData(self.numEquip) )
@@ -455,7 +458,7 @@ function SetManager:AnalyseData()
     active["body"] = numEquip["body"] >= maxEquip
     self.activeOnBar[setId] = active 
   end
-  if self.debug and ExoyDev then 
+  if libDebug and self.debug then 
     debugMsg("SD", "analyse data") 
     d("current activeOnBar list")
     d( self.activeOnBar )
@@ -499,7 +502,7 @@ function SetManager:DetermineChanges()
       changeList[setId] = LSD_CHANGE_TYPE_UNEQUIPPED
     end
   end
-  if self.debug and ExoyDev then 
+  if libDebug and self.debug then 
     debugMsg("SD", "determine changes") 
     d("archive activeOnBar list ")
     d( self.archive.activeOnBar )
@@ -523,7 +526,7 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
-  if self.debug and ExoyDev then debugMsg("SD - "..self.unitType, "fire callbacks") end
+  if libDebug and self.debug then debugMsg(self.unitType, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
      -- initialize, because activeOnBar does not exist for completely unquipped sets
     local activeOnBody = false
@@ -535,7 +538,7 @@ function SetManager:FireCallbacks( changeList )
       activeOnFront = self.activeOnBar[setId]["front"]
       activeOnBack =  self.activeOnBar[setId]["back"]
     end
-    CallbackManager.FireCallbacks( "SetChange", self.unitType, setId, 
+    CallbackManager:FireCallbacks( "SetChange", self.unitType, setId, 
       changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack) 
   end
 end
@@ -558,6 +561,7 @@ function SetManager:GetActiveSets()
     for _, barName in pairs(barList) do 
       if self.activeOnBar[setId][barName] then 
         table.insert(_onBarList[barName], setId)
+      end
     end
   end
   return _stateList, _onBarList["body"], _onBarList["front"], _onBarList["back"]
@@ -589,12 +593,12 @@ function GroupManager:Initialize()
   self.groupSets = {}
 
   --- local functions reference 
-  local function _OnGroupUpdate() self:OnGroupMemberUpdate() end
+  --local function _OnGroupUpdate() self:OnGroupMemberUpdate() end
   local function _OnGroupMemberJoined(...) self:OnGroupMemberJoined(...) end
   local function _OnGroupMemberLeft(...) self:OnGroupMemberLeft(...) end 
 
   --- Events 
-  EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, _OnGroupUpdate)
+  --EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, _OnGroupUpdate)
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, _OnGroupMemberJoined )
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, _OnGroupMemberLeft )
 end
@@ -640,7 +644,6 @@ end
 
 
 function GroupManager:GetSetManager( charName ) 
-  local 
   -- check if there exists a set manager 
   if self.groupSets[charName] then 
     return self.groupSet[charName]
@@ -701,7 +704,8 @@ DataMsg = {}
 function DataMsg:Initialize() 
   if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
-  self.handler = LGB:DeclareProtocol(42, "LibSetDetection_Data")
+  self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
+  self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
   local dataArray = LGB.CreateArrayField(LGB.CreateTableField("SetData", {
       LGB.CreateNumericField("id", { min = 0, max = 1023 }),
       LGB.CreateNumericField("body", { min = 0, max = 10 }),
@@ -709,12 +713,10 @@ function DataMsg:Initialize()
       LGB.CreateNumericField("back", { min = 0, max = 2 }),
     }), { minSize = 1, maxSize = 8 })
   self.handler:AddField(dataArray)
-  
   local function _OnIncomingMsg(...)
     self:OnIncomingMsg(...)
   end
   self.handler:OnData( _OnIncomingMsg )  
-  
   self.handler:Finalize()
   return self
 end
@@ -759,6 +761,9 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   local unitName = GetUnitName(unitTag)
   local data = self:DeserilizeData(rawData.SetData)
   if unitName == playerName then 
+    d("received Data") 
+    d(unitTag)
+    d(rawData) 
     --GroupManager.UpdateData( unitName, unitTag, data ) 
   else 
     GroupManager:UpdateData( unitName, unitTag, data ) 
@@ -781,7 +786,7 @@ end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
---[[ %% -- Slot Manager -- %% ]]
+--[[ %% -- Slot Handler -- %% ]]
 --[[ %% ------------------ %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]] 
 
@@ -797,7 +802,7 @@ end
 
 
 function SlotManager:UpdateLoadout() 
-  if self.debug and ExoyDev then debugMsg( "SM", "loadout update" ) end
+  if libDebug and self.debug then debugMsg( "SM", "loadout update" ) end
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
@@ -806,7 +811,7 @@ end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  if self.debug and ExoyDev then debugMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
+  if libDebug and self.debug then debugMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
@@ -832,12 +837,12 @@ end
 function SlotManager:ResetQueue() 
   if self.queueId then 
     zo_removeCallLater( self.queueId )
-    if self.debug and ExoyDev then debugMsg("SM", "reset queue") end 
+    if libDebug and self.debug then debugMsg("SM", "reset queue") end 
   else 
-    if self.debug and ExoyDev then debugMsg("SM", "start queue") end
+    if libDebug and self.debug then debugMsg("SM", "start queue") end
   end
   self.queueId = zo_callLater( function() 
-    if self.debug and ExoyDev then debugMsg("SM", "end queue") end
+    if libDebug and self.debug then debugMsg("SM", "end queue") end
     self:SendData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -854,13 +859,13 @@ function SlotManager:SendData() ---rename
     end
   end 
   numEquip[0] = nil
-  if self.debug and ExoyDev then 
+  if libDebug and self.debug then 
     debugMsg("SM", "relay data")
     d( ExtendNumEquipData(numEquip) )
     d("---------- end: relay data")
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
-  BroadcastManager:SendSetup( numEquip ) 
+  --BroadcastManager.DataMsg:SendSetup( numEquip ) 
   CallbackManager:FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
@@ -893,16 +898,14 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local function Initialize() 
-  --local defaults = {
-  --  ["debug"] = false, 
-  --}
---  SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
+
+  libDebug = ExoyDev and true or libDebug 
+
 
   CallbackManager:Initialize()
   BroadcastManager:Initialize() 
   GroupManager:Initialize()
   SlotManager:Initialize() 
-
 
   PlayerSets = SetManager:New("player") 
 
@@ -937,8 +940,9 @@ local function ReadData( unitTag, setId, funcName )
   if unitTag == "player" then 
     SM = PlayerSets
   else 
-    SM, resultCode = GroupManager:GetSetManager( unitTag ) 
-  return [funcName](SM, setId)
+    SM = GroupManager:GetSetManager( unitTag ) 
+  end
+  return SM[funcName](SM, setId)
 end
 
 
@@ -1086,6 +1090,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
   local cmdList = {
     ["equip"] = "output list of equipped sets",
     ["setid"] = "outputs id of all sets, that include search string",
+    ["debug"] = "toggles global debug variable"
   }
 
   --deserializ input 
@@ -1096,7 +1101,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
   end
 
   local cmd = table.remove(param, 1) 
-  if cmd == ""  then 
+
+  
+  if not cmd or cmd == ""  then 
     d("[LibSetDetection] - command overview")
     for cmdName, cmdInfo in pairs( cmdList ) do 
       d( zo_strformat("<<1>> - <<2>>", cmdName, cmdInfo) )
@@ -1128,11 +1135,17 @@ SLASH_COMMANDS["/lsd"] = function( input )
     else 
       d("[LibSetDetection] search string is missing ")
     end
+  elseif cmd == "debug" then 
+    libDebug = not libDebug 
+    d( zo_strformat("[LibsetDetection] Debug switched > <<1>> <", libDebug and "on" or "off"))
   else 
-    if cmd == "dev" and ExoyDev  then 
+    if cmd == "dev" and ExoyDev then 
       --- call development functions 
       --Development.OutputEquippedSets()
-      Development.OutputPlayerSets()    
+      --Development.OutputPlayerSets()    
+      if param[1] == "registry" then 
+        Development.OutputRegistry()
+      end
     else 
       d("[LibSetDetection] command unknown")
     end
@@ -1151,4 +1164,9 @@ end
 
 function Development.OutputPlayerSets() 
   d(PlayerSets.numEquip)
+end
+
+function Development.OutputRegistry()
+  d("LSD - Output Registry") 
+  d(CallbackManager.registry)
 end
