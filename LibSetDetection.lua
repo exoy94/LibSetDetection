@@ -15,7 +15,6 @@ local libName = "LibSetDetection"
 local libVersion = 4
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
-local SV 
 
 --[[ -------------- ]]
 --[[ -- Entities -- ]]
@@ -193,12 +192,7 @@ end
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
-local function debugMsg( msg ) 
-  if not SV.debug then return end
-  d( zo_strformat("[<<1>>-LSD] <<2>>", GetTimeString(), msg) )
-end
-
-local function devMsg(id, msg) 
+local function debugMsg(id, msg) 
   d( zo_strformat("[<<1>> LSD - <<2>>] <<3>>", GetTimeString(), id, msg) )  
 end
 
@@ -242,11 +236,11 @@ CallbackManager.results = {
 
 
 
-function CallbackManager.UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
-  local CM = CallbackManager 
+function CallbackManager:UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
+
   if unitType == "all" or not unitType then   -- if unitType is nil or "all" execute function for "player" and "group"
-    local resultPlayer = CM.UpdateRegistry(action, registryType, uniqueId, callback, "player", filterTable)
-    local resultGroup = CM.UpdateRegistry(action, registryType, uniqueId, callback, "group", filterTable)
+    local resultPlayer = self:UpdateRegistry(action, registryType, uniqueId, callback, "player", filterTable)
+    local resultGroup = self:UpdateRegistry(action, registryType, uniqueId, callback, "group", filterTable)
     return resultPlayer, resultGroup
   end
   --- verify general user inputs
@@ -256,17 +250,17 @@ function CallbackManager.UpdateRegistry(action, registryType, uniqueId, callback
   --- set change registry
   local registryName = unitType..registryType
   if registryType == "SetChange" then 
-    return CM.UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
+    return self:UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
   end 
   --- data update registry
   if registryType == "DataUpdate" then 
-    return CM.UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
+    return self:UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
   end
 end   -- End of "UpdateRegistry"
 
 
 
-function CallbackManager.UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
+function CallbackManager:UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
   --- validate filter 
   local function IsValidSetChangeFilter() 
     if not filter then return true end --  
@@ -288,7 +282,7 @@ function CallbackManager.UpdateSetChangeRegistry( action, registryName, uniqueId
   end
   --- update registry
   for _, filterId in pairs(filter) do 
-    local callbackList = CallbackManager.registry[registryName][filterId] or {}
+    local callbackList = self.registry[registryName][filterId] or {}
     if action then    -- registration
       if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
       callbackList[uniqueId] = callback 
@@ -301,11 +295,11 @@ function CallbackManager.UpdateSetChangeRegistry( action, registryName, uniqueId
 end   -- End of "UpdateSetChangeRegistry"
 
 
-function CallbackManager.UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
+function CallbackManager:UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
   --- validate filter
   if filter then return CALLBACK_RESULT_INVALID_FILTER end 
   --- update registry
-  local callbackList = CallbackManager.registry[registryName] 
+  local callbackList = self.registry[registryName] 
   if action then -- registration
     if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
     callbackList[uniqueId] = callback 
@@ -316,46 +310,38 @@ function CallbackManager.UpdateDataUpdateRegistry( action, registryName, uniqueI
 end   -- UpdateDataUpdateRegistry
 
 
-function CallbackManager.FireCallbacks( eventType, unitType, setId, ... ) 
-  local function FireCallbacks(callbackList, ...) 
+function CallbackManager:FireCallbacks( eventType, unitType, setId, ... ) 
+  
+  local function _FireCallbacks(callbackList, ...) 
     if ZO_IsTableEmpty( callbackList ) then return end 
     for _, callback in pairs( callbackList ) do 
       callback(...) 
     end
   end
   
-  local CM = CallbackManager
   local registryName = unitType..eventType
+
   if eventType == "DataUpdate" then 
-    FireCallbacks( CM.registry[registryName],... )
-    -- unitTag
-    -- numEquipExtended
-    -- equippedGear
-    if CM.debug and ExoyDev then 
+    -- unitTag, numEquipExtended, equippedGear
+    if self.debug and ExoyDev then 
       local p = {...} 
-      devMsg("CM", zo_strformat("DataUpdate for <<1>>", p[1]) )
-      d(p[2])
-      d("---") 
-      d(p[3])
-      d("---")
+      debugMsg("CM", zo_strformat("DataUpdate for <<1>>", p[1]) )
     end
+    _FireCallbacks( self.registry[registryName],... )
+
   elseif eventType == "SetChange" then 
-    -- changeType 
-    -- unperfSetId 
-    -- unitTag 
-    -- isActiveOnBody 
-    -- isActiveOnFront
-    -- isActiveOnBack
-    if CM.debug and ExoyDev then --debug for "SetChange Event"
+    -- changeType, unperfSetId, unitTag, isActiveOnBody, isActiveOnFront, isActiveOnBack
+    if self.debug and ExoyDev then --debug for "SetChange Event"
       local p = {...}
       local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], DecodeChangeType(p[1]), p[1] ) 
       local msgEnd = zo_strformat("<<1>> (<<2>>) - {<<3>>, <<4>>, <<5>>}", 
         GetSetName( p[2] ), p[2], p[4] and 1 or 0, p[5] and 1 or 0, p[6] and 1 or 0 )
-      devMsg("CM", msgStart..msgEnd )
+        debugMsg("CM", msgStart..msgEnd )
     end
-    FireCallbacks( CM.registry[registryName][0], ...)
-    FireCallbacks( CM.registry[registryName][setId], ...)
+    _FireCallbacks( self.registry[registryName][0], ...)
+    _FireCallbacks( self.registry[registryName][setId], ...)
   end
+
 end
 
 
@@ -385,7 +371,7 @@ end
 
 
 function SetManager:UpdateData( newData, unitTag )
-  if self.debug and ExoyDev then  devMsg( "SD", "update data ("..unitTag..")" ) end
+  if self.debug and ExoyDev then  debugMsg( "SD", "update data ("..unitTag..")" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
   self:InitTables( newData )  -- updates archive and resets current 
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
@@ -396,7 +382,7 @@ end
 
 
 function SetManager:InitTables( data ) 
-  if self.debug and ExoyDev then devMsg( "SD", "initialize tables") end
+  if self.debug and ExoyDev then debugMsg( "SD", "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
@@ -439,7 +425,7 @@ function SetManager:ConvertDataToUnperfected()
   end
   -- debug
   if self.debug and ExoyDev then 
-    devMsg( "SD", "convert data to unperfected")
+    debugMsg( "SD", "convert data to unperfected")
     d("raw data:")
     d(ExtendNumEquipData(self.numEquip) )
     d("------------ End of raw data")
@@ -470,7 +456,7 @@ function SetManager:AnalyseData()
     self.activeOnBar[setId] = active 
   end
   if self.debug and ExoyDev then 
-    devMsg("SD", "analyse data") 
+    debugMsg("SD", "analyse data") 
     d("current activeOnBar list")
     d( self.activeOnBar )
     d("------------ End of current activeOnBar list")
@@ -514,7 +500,7 @@ function SetManager:DetermineChanges()
     end
   end
   if self.debug and ExoyDev then 
-    devMsg("SD", "determine changes") 
+    debugMsg("SD", "determine changes") 
     d("archive activeOnBar list ")
     d( self.archive.activeOnBar )
     d("------------ End of archive activeOnBar list")
@@ -537,7 +523,7 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
-  if self.debug and ExoyDev then devMsg("SD - "..self.unitType, "fire callbacks") end
+  if self.debug and ExoyDev then debugMsg("SD - "..self.unitType, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
      -- initialize, because activeOnBar does not exist for completely unquipped sets
     local activeOnBody = false
@@ -712,7 +698,7 @@ end
 
 DataMsg = {}
 
-function DataMsg:Initialize() --- entity debug toogle
+function DataMsg:Initialize() 
   if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
   self.handler = LGB:DeclareProtocol(42, "LibSetDetection_Data")
@@ -723,21 +709,25 @@ function DataMsg:Initialize() --- entity debug toogle
       LGB.CreateNumericField("back", { min = 0, max = 2 }),
     }), { minSize = 1, maxSize = 8 })
   self.handler:AddField(dataArray)
-  self.handler:OnData( self.OnIncomingMsg )  
+  
+  local function _OnIncomingMsg(...)
+    self:OnIncomingMsg(...)
+  end
+  self.handler:OnData( _OnIncomingMsg )  
+  
   self.handler:Finalize()
   return self
 end
 
 
-function DataMsg.SendSetup( numEquip ) 
-  --- why doe I get extended data, when the DataUpdate Event is happening? 
-  local data = DataMsg.SerilizeData( numEquip ) 
-  local sendData = {["SetData"] = {data[1]} }
-  DataMsg.handler:Send( sendData ) 
+function DataMsg:SendSetup( numEquip ) 
+  local data = self:SerilizeData( numEquip ) 
+  local sendData = {["SetData"] = data }
+  self.handler:Send( sendData ) 
 end
 
 
-function DataMsg.SerilizeData( data ) 
+function DataMsg:SerilizeData( data ) 
   -- format data for data broadcast
   local formattedData = {}
   for setId, setData in pairs( data ) do 
@@ -752,7 +742,7 @@ function DataMsg.SerilizeData( data )
 end
 
 
-function DataMsg.DeserilizeData( rawData ) 
+function DataMsg:DeserilizeData( rawData ) 
   local data = {}
   for _, setData in ipairs(rawData) do  
     data[setData.id] = {
@@ -765,13 +755,13 @@ function DataMsg.DeserilizeData( rawData )
 end
 
 
-function DataMsg.OnIncomingMsg(unitTag, rawData) 
-  local charName = GetUnitName(unitTag)
-  local data = DataMsg.DeserilizeData(rawData.SetData)
-  if charName == playerName then 
-    GroupManager.UpdateData( charName, unitTag, data ) 
+function DataMsg:OnIncomingMsg(unitTag, rawData) 
+  local unitName = GetUnitName(unitTag)
+  local data = self:DeserilizeData(rawData.SetData)
+  if unitName == playerName then 
+    --GroupManager.UpdateData( unitName, unitTag, data ) 
   else 
-    GroupManager.UpdateData( charName, unitTag, data ) 
+    GroupManager:UpdateData( unitName, unitTag, data ) 
   end
 end
 
@@ -783,6 +773,10 @@ function BroadcastManager:Initialize()
   self.DataMsg = DataMsg:Initialize() 
 end
 
+function BroadcastManager:SendData(numEquip) 
+--- toDo for early outs
+  self.DataMsg:SendData(numEquip)
+end
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -803,7 +797,7 @@ end
 
 
 function SlotManager:UpdateLoadout() 
-  if self.debug and ExoyDev then devMsg( "SM", "loadout update" ) end
+  if self.debug and ExoyDev then debugMsg( "SM", "loadout update" ) end
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
@@ -812,7 +806,7 @@ end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  if self.debug and ExoyDev then devMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
+  if self.debug and ExoyDev then debugMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
@@ -838,12 +832,12 @@ end
 function SlotManager:ResetQueue() 
   if self.queueId then 
     zo_removeCallLater( self.queueId )
-    if self.debug and ExoyDev then devMsg("SM", "reset queue") end 
+    if self.debug and ExoyDev then debugMsg("SM", "reset queue") end 
   else 
-    if self.debug and ExoyDev then devMsg("SM", "start queue") end
+    if self.debug and ExoyDev then debugMsg("SM", "start queue") end
   end
   self.queueId = zo_callLater( function() 
-    if self.debug and ExoyDev then devMsg("SM", "end queue") end
+    if self.debug and ExoyDev then debugMsg("SM", "end queue") end
     self:SendData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -861,13 +855,13 @@ function SlotManager:SendData() ---rename
   end 
   numEquip[0] = nil
   if self.debug and ExoyDev then 
-    devMsg("SM", "relay data")
+    debugMsg("SM", "relay data")
     d( ExtendNumEquipData(numEquip) )
     d("---------- end: relay data")
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
-  --BroadcastManager.DataMsg:SendCurrentSetup( numEquip ) 
-  CallbackManager.FireCallbacks( "DataUpdate", "player", nil, 
+  BroadcastManager:SendSetup( numEquip ) 
+  CallbackManager:FireCallbacks( "DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
     self.equippedGear ) 
@@ -899,11 +893,12 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local function Initialize() 
-  local defaults = {
-    ["debug"] = false, 
-  }
-  SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
-  
+  --local defaults = {
+  --  ["debug"] = false, 
+  --}
+--  SV = ZO_SavedVars:NewAccountWide( "LibSetDetectionSV", 0, nil, defaults, "SavedVariables" )
+
+  CallbackManager:Initialize()
   BroadcastManager:Initialize() 
   GroupManager:Initialize()
   SlotManager:Initialize() 
@@ -1062,11 +1057,11 @@ end
 --    6. isActiveOnBack (bool) 
 
 function LibSetDetection.RegisterForSetChange( ... )
-  return CallbackManager.UpdateRegistry( true, "SetChange", ...)
+  return CallbackManager:UpdateRegistry( true, "SetChange", ...)
 end
 
 function LibSetDetection.UnregisterSetChange( ... ) 
-  return CallbackManager.UpdateRegistry( false, "SetChange", ...)
+  return CallbackManager:UpdateRegistry( false, "SetChange", ...)
 end
 
 
@@ -1074,11 +1069,11 @@ end
 -- player when slots change (ToDo) 
 -- group when number at any bar changes
 function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager.UpdateRegistry( true, "DataUpdate", ...)
+  return CallbackManager:UpdateRegistry( true, "DataUpdate", ...)
 end
 
 function LibSetDetection.UnregisterDataUpdate( ... ) 
-  return CallbackManager.UpdateRegistry( false, "DataUpdate", ...)
+  return CallbackManager:UpdateRegistry( false, "DataUpdate", ...)
 end
 
 
