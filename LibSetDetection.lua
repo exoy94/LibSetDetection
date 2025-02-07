@@ -215,7 +215,7 @@ end
 -- *filter*:nilable (if *registryType = "SetChange", needs to be numer or table of numbers (setIds) )
 
 function CallbackManager:Initialize() 
-  self.debug = true 
+  self.debug = false
   self.registry = {
     ["playerSetChange"] = {}, 
     ["groupSetChange"] = {}, 
@@ -360,10 +360,10 @@ function SetManager:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = true    --- entity debug toogle
+    self.debug = false    --- entity debug toogle
   end
   if unitType == "group" then 
-    self.debug = true     --- entity debug toogle
+    self.debug = false     --- entity debug toogle
   end
   self.unitType = unitType or "empty"
   self.numEquip = {} 
@@ -708,21 +708,22 @@ function DataMsg:Initialize()
   local LGB = LibGroupBroadcast
   self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
   self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
-  local dataArray = LGB.CreateArrayField(LGB.CreateTableField("SetData", {
-      LGB.CreateNumericField("id", { min = 0, max = 1023 }),
-      LGB.CreateNumericField("body", { min = 0, max = 10 }),
-      LGB.CreateNumericField("front", { min = 0, max = 2 }),
-      LGB.CreateNumericField("back", { min = 0, max = 2 }),
-    }), { minSize = 1, maxSize = 8 })
+  local dataArray = LGB.CreateArrayField( LGB.CreateTableField("SetData", {
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),
+      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
+      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
+      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
+    }), { minLength = 1, maxLength = 8 } )
   self.handler:AddField(dataArray)
   local function _OnIncomingMsg(...)
     self:OnIncomingMsg(...)
   end
   self.handler:OnData( _OnIncomingMsg )  
-  self.handler:Finalize()
+  self.sucessfullFinalized = self.handler:Finalize()
   return self
 end
 
+-- /script d(LibSetDetection.output)
 
 function DataMsg:SendSetup( numEquip ) 
   local data = self:SerilizeData( numEquip ) 
@@ -867,7 +868,7 @@ function SlotManager:SendData() ---rename
     d("---------- end: relay data")
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
-  --BroadcastManager.DataMsg:SendSetup( numEquip ) 
+  BroadcastManager.DataMsg:SendSetup( numEquip ) 
   CallbackManager:FireCallbacks("DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
