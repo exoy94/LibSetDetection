@@ -374,7 +374,8 @@ end
 
 
 function SetManager:UpdateData( newData, unitTag )
-  if libDebug and self.debug then  debugMsg( "SD", "update data ("..unitTag..")" ) end
+  self.debugHeader = zo_strformat( "SM <<1>> (<<2>>)", unitTag, GetUnitName(unitTag) )
+  if libDebug and self.debug then debugMsg( self.debugHeader, "update data" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
   self:InitTables( newData )  -- updates archive and resets current 
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
@@ -385,7 +386,7 @@ end
 
 
 function SetManager:InitTables( data ) 
-  if libDebug and self.debug then debugMsg( "SD", "initialize tables") end
+  if libDebug and self.debug then debugMsg( self.debugHeader, "initialize tables") end
   self.archive = {} 
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
@@ -428,7 +429,7 @@ function SetManager:ConvertDataToUnperfected()
   end
   -- debug
   if libDebug and self.debug then 
-    debugMsg( "SD", "convert data to unperfected")
+    debugMsg( self.debugHeader, "convert data to unperfected")
     d("raw data:")
     d(ExtendNumEquipData(self.numEquip) )
     d("------------ End of raw data")
@@ -459,7 +460,7 @@ function SetManager:AnalyseData()
     self.activeOnBar[setId] = active 
   end
   if libDebug and self.debug then 
-    debugMsg("SD", "analyse data") 
+    debugMsg( self.debugHeader, "analyse data") 
     d("current activeOnBar list")
     d( self.activeOnBar )
     d("------------ End of current activeOnBar list")
@@ -503,7 +504,7 @@ function SetManager:DetermineChanges()
     end
   end
   if libDebug and self.debug then 
-    debugMsg("SD", "determine changes") 
+    debugMsg( self.debugHeader, "determine changes") 
     d("archive activeOnBar list ")
     d( self.archive.activeOnBar )
     d("------------ End of archive activeOnBar list")
@@ -526,7 +527,7 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
-  if libDebug and self.debug then debugMsg(self.unitType, "fire callbacks") end
+  if libDebug and self.debug then debugMsg( self.debugHeader, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
      -- initialize, because activeOnBar does not exist for completely unquipped sets
     local activeOnBody = false
@@ -580,6 +581,7 @@ end
 function SetManager:GetEquippedSets() 
   return ExtendNumEquipData( self.numEquip )
 end
+
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------- %% ]]
@@ -866,7 +868,7 @@ function SlotManager:SendData() ---rename
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
   --BroadcastManager.DataMsg:SendSetup( numEquip ) 
-  CallbackManager:FireCallbacks( "DataUpdate", "player", nil, 
+  CallbackManager:FireCallbacks("DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
     self.equippedGear ) 
@@ -928,11 +930,12 @@ end
 EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 
 
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ----------------------- %% ]]
---[[ %% -- Exposed Functions -- %% ]]
---[[ %% ----------------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+--[[ %%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% --------------- %% ]]
+--[[ %% -- Interface -- %% ]]
+--[[ %% --------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%% ]]
 
 
 local function ReadData( unitTag, setId, funcName ) 
@@ -947,7 +950,6 @@ end
 
 
 local function AccessSetManager(unitTag, setId, funcName)
-
   if unitTag == "all" or not unitTag then 
     local playerData = {ReadData("player", setId, funcName)}
     local groupData  = {AccessSetManager("group", setId, funcName)}
@@ -955,7 +957,6 @@ local function AccessSetManager(unitTag, setId, funcName)
     combinedData.player = playerData 
     return combinedData
   end
-
   if unitTag == "group" then 
     local groupData = {} 
     local groupResult = {}
@@ -967,38 +968,41 @@ local function AccessSetManager(unitTag, setId, funcName)
     end
     return groupData
   end 
-
   -- validate unitTag by checken for name of corresponding unit
   local unitName = GetUnitName(unitTag) 
   if not unitName or unitName == "" then return nil end 
-    
   return ReadData(unitTag, setId, funcName)
 end
 
 
---- unit, group, all, player 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %% -- Exposed Functions -- %% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
--- unitType: "all", "player", "group" or a specific groupTag 
+---Input 
+-- *unitTag*: for which unit(s) the data are to be provided
+--    + all - player and all group member (outputs table of data)
+--    + group - all group members (outputs table of data)
+--    + player - only the player 
+--    + group..i - specific group member
 
 function LibSetDetection.HasSet( unitTag, setId )
   return AccessSetManager( unitTag, setId, "HasSet")
 end
 
-
 function LibSetDetection.GetActiveSets(unitTag) 
   return AccessSetManager(unitTag, nil, "GetActiveSets")
 end
-
 
 function LibSetDetection.GetNumEquip(unitTag, setId) 
   return AccessSetManager(unitTag, nil, "GetNumEquip")  
 end
 
-
 function LibSetDetection.GetEquippedSets(unitTag) 
   return AccessSetManager(unitTag, nil, "GetEquippedSets")   
 end
-
 
 
 --- Utility
@@ -1018,7 +1022,6 @@ function LibSetDetection.GetUnitRawNumEquip() -- return data while still separat
 end
 
 
-
 --- Legacy (only for player) 
 function LibSetDetection.GetEquippedSetsTable() 
   local PS = PlayerSets
@@ -1033,11 +1036,6 @@ function LibSetDetection.GetEquippedSetsTable()
   end
   return returnTable
 end
-
-
-
-
-
 
 
 --[[ Exposed Functions of CallbackManager ]]
