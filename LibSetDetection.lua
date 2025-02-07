@@ -215,7 +215,7 @@ end
 -- *filter*:nilable (if *registryType = "SetChange", needs to be numer or table of numbers (setIds) )
 
 function CallbackManager:Initialize() 
-  self.debug = false
+  self.debug = true
   self.registry = {
     ["playerSetChange"] = {}, 
     ["groupSetChange"] = {}, 
@@ -763,13 +763,11 @@ end
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   local unitName = GetUnitName(unitTag)
   local data = self:DeserilizeData(rawData.SetData)
+  if ExoyDev then d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) end
   if unitName == playerName then 
-    d("received Data") 
-    d(unitTag)
-    d(rawData) 
-    --GroupManager.UpdateData( unitName, unitTag, data ) 
+
   else 
-    GroupManager:UpdateData( unitName, unitTag, data ) 
+  GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
 end
 
