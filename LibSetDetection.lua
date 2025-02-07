@@ -33,11 +33,14 @@ local Development = {}      -- Dev
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
-local function Template_BarListSubtables( init, initFront, initBack ) 
-  local _initBody = init or 0 
-  local _initFront = initFront or _initBody 
-  local _initBack = initBack or _initBody
-  return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
+local function Template_BarListSubtables( initType, initBody, initFront, initBack )
+  if initType == "table" then return { ["body"] = {}, ["front"] = {}, ["back"] = {} } end
+  if initType == "numeric" then 
+    _initBody = initBody or 0 
+    _initFront = initFront or 0 
+    _initBack = initBack or 0
+    return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
+  end
 end
 
 
@@ -360,7 +363,7 @@ function SetManager:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = false    --- entity debug toogle
+    self.debug = true   --- entity debug toogle
   end
   if unitType == "group" then 
     self.debug = false     --- entity debug toogle
@@ -554,11 +557,11 @@ function SetManager:HasSet(setId)
 end 
 
 
-function SetManager:GetActiveSets()  
+function SetManager:GetActiveSets() 
   local _stateList = {}
-  local _onBarList = Template_BarListSubtables( {} ) 
+  local _onBarList = Template_BarListSubtables{"table"}
   for setId, activeState in pairs( self.activeState ) do 
-    table.insert(_stateList, setId)  
+    if activeState then table.insert(_stateList, setId) end
     for _, barName in pairs(barList) do 
       if self.activeOnBar[setId][barName] then 
         table.insert(_onBarList[barName], setId)
@@ -570,7 +573,7 @@ end
 
 
 function SetManager:GetNumEquip(setId)
-  local _numEquip = Template_BarListSubtables(0)
+  local _numEquip = Template_BarListSubtables("numeric")
   for _, barName in pairs(barList) do 
     _numEquip[barName] = self.numEquip[setId][barName]
   end
@@ -634,23 +637,24 @@ function GroupManager:OnGroupMemberLeft(_, charName, _, isLocalPlayer)
 end
 
 
-function GroupManager:UpdateSetData( charName, unitTag, data ) 
+function GroupManager:UpdateSetData( unitName, unitTag, data ) 
   local _gs = self.groupSets  
-  if _gs[charName] then 
-    _gs[charName]:UpdateData( data, unitTag ) 
+  if _gs[unitName] then 
+    _gs[unitName]:UpdateData( data, unitTag ) 
   else 
-    _gs[charName] = SetManager:New("group")
-    _gs[charName]:UpdateData( data, unitTag )
+    _gs[unitName] = SetManager:New("group")
+    _gs[unitName]:UpdateData( data, unitTag )
   end
 end
 
 
-function GroupManager:GetSetManager( charName ) 
+function GroupManager:GetSetManager( unitTag ) 
+  local unitName = GetUnitName(unitTag)
   -- check if there exists a set manager 
-  if self.groupSets[charName] then 
-    return self.groupSet[charName]
+  if self.groupSets[unitName] then 
+    return self.groupSets[unitName]
   else 
-    return DefaultSetManager --- entity, that returns default values for all tables 
+    --return DefaultSetManager --- entity, that returns default values for all tables 
   end
 
 end 
@@ -715,6 +719,7 @@ function DataMsg:Initialize()
       LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
     }), { minLength = 1, maxLength = 8 } )
   self.handler:AddField(dataArray)
+  self.handler:AddField( LGB.CreateFlagField("request") )
   local function _OnIncomingMsg(...)
     self:OnIncomingMsg(...)
   end
@@ -727,7 +732,10 @@ end
 
 function DataMsg:SendSetup( numEquip ) 
   local data = self:SerilizeData( numEquip ) 
-  local sendData = {["SetData"] = data }
+  local sendData = {
+    ["SetData"] = data,
+    ["request"] = true,
+  }
   self.handler:Send( sendData ) 
 end
 
@@ -763,14 +771,14 @@ end
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   local unitName = GetUnitName(unitTag)
   local data = self:DeserilizeData(rawData.SetData)
+  d(rawData.request)
   if ExoyDev then d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) end
   if unitName == playerName then 
-
+    GroupManager:UpdateSetData( unitName, unitTag, data ) 
   else 
-  GroupManager:UpdateSetData( unitName, unitTag, data ) 
+    GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
 end
-
 
 
 --[[ ----- End of DataMsg ----- ]]
@@ -783,6 +791,7 @@ function BroadcastManager:SendData(numEquip)
 --- toDo for early outs
   self.DataMsg:SendData(numEquip)
 end
+
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -855,7 +864,7 @@ function SlotManager:SendData() ---rename
   for _, barName in pairs(barList) do  -- body, front, back 
     for slotId, _ in pairs( slotList[barName]) do 
       local setId = self.equippedGear[slotId] 
-      numEquip[setId] = numEquip[setId] or Template_BarListSubtables(0) 
+      numEquip[setId] = numEquip[setId] or Template_BarListSubtables("numeric") 
       numEquip[setId][barName] = numEquip[setId][barName] + 1
     end
   end 
@@ -901,7 +910,6 @@ end
 local function Initialize() 
 
   libDebug = ExoyDev and true or libDebug 
-
 
   CallbackManager:Initialize()
   BroadcastManager:Initialize() 
@@ -949,7 +957,8 @@ end
 
 
 local function AccessSetManager(unitTag, setId, funcName)
-  if unitTag == "all" or not unitTag then 
+  unitTag = unitTag or "player"
+  if unitTag == "all" then 
     local playerData = {ReadData("player", setId, funcName)}
     local groupData  = {AccessSetManager("group", setId, funcName)}
     local combinedData = groupData  
@@ -987,7 +996,7 @@ end
 --    + player - only the player 
 --    + group..i - specific group member
 
-function LibSetDetection.HasSet( unitTag, setId )
+function LibSetDetection.HasSet( setId, unitTag )
   return AccessSetManager( unitTag, setId, "HasSet")
 end
 
@@ -995,8 +1004,8 @@ function LibSetDetection.GetActiveSets(unitTag)
   return AccessSetManager(unitTag, nil, "GetActiveSets")
 end
 
-function LibSetDetection.GetNumEquip(unitTag, setId) 
-  return AccessSetManager(unitTag, nil, "GetNumEquip")  
+function LibSetDetection.GetNumEquip(setId, unitTag) 
+  return AccessSetManager(unitTag, setId, "GetNumEquip")  
 end
 
 function LibSetDetection.GetEquippedSets(unitTag) 
@@ -1013,11 +1022,12 @@ end
 
 --- Advanced 
 function LibSetDetection.GetPlayerEquippedGear() 
-  return PlayerSets.equippedGear 
+  return SlotManager.equippedGear 
 end
 
 
 function LibSetDetection.GetUnitRawNumEquip() -- return data while still separating bettween normal and perf
+
 end
 
 
@@ -1142,6 +1152,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
       --Development.OutputPlayerSets()    
       if param[1] == "registry" then 
         Development.OutputRegistry()
+      elseif param[1] == "groupsets" then 
+        Development.OutputGroupManager()         
       end
     else 
       d("[LibSetDetection] command unknown")
@@ -1166,4 +1178,8 @@ end
 function Development.OutputRegistry()
   d("LSD - Output Registry") 
   d(CallbackManager.registry)
+end
+
+function Development.OutputGroupManager()
+  d(GroupManager.groupSets)
 end
