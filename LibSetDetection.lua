@@ -33,6 +33,7 @@ local Development = {}      -- Dev
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
+--- Todo: rename!
 local function Template_BarListSubtables( initType, initBody, initFront, initBack )
   if initType == "table" then return { ["body"] = {}, ["front"] = {}, ["back"] = {} } end
   if initType == "numeric" then 
@@ -134,6 +135,14 @@ local function IsFunction(f)
   return type(f) == "function"
 end
 
+local function InvertTable( t ) 
+  local invertedT = {} 
+  for k,v in pairs(t) do 
+    invertedT[v] = k 
+  end
+  return invertedT
+end
+
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
@@ -166,7 +175,7 @@ local function GetMaxEquip( setId )
     [695]= 5, ---check id
   }
   
-  local _, _, _, _, _, maxEquip = GetItemSetInfo( setId )
+  local _, _, _, _, _, maxEquip = GetItemSetInfo( setId ) 
 
   if exception[setId] then
     maxEquip = exception[setId]
@@ -361,7 +370,7 @@ function SetManager:New( unitType, unitTag )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = true   --- entity debug toogle
+    self.debug = false   --- entity debug toogle
   end
   if unitType == "group" then 
     self.debug = false     --- entity debug toogle
@@ -692,43 +701,112 @@ end
 --[[ -- Data Msg -- ]]
 --[[ -------------- ]]
 
---- Serilizer 
-local function Serilizer_V1( rawData ) 
-
-end
-
---- Deserilizer 
-local function Deserilizer_V1( rawData ) 
-
-end
-
-
 DataMsg = {}
 
-function DataMsg:SerilizeData_new() 
-  local version = 1
+
+local SET_TYPE_NORMAL = 0 
+local SET_TYPE_MYSTICAL = 1 
+local SET_TYPE_UNDAUNTED = 2 
+local SET_TYPE_WEAPON = 3
 
 
+function DataMsg:GetSetType( setId )  
+  if self:ExternalToInternalId("mystical", setId) then return SET_TYPE_MYSTICAL 
+  elseif self:ExternalToInternalId("undaunted", setId) then return SET_TYPE_UNDAUNTED
+  elseif self:ExternalToInternalId("weapon", setId) then return SET_TYPE_WEAPON
+  else 
+    return SET_TYPE_NORMAL 
+  end
+end
+
+function DataMsg:ExternalToInternalId(category, externalId)
+  return self.internalId[category][externalId]
+end
+
+function DataMsg:InternalToExternalId(category, internalId)
+  return self.externalId[category][internalId]
+end
+
+
+function DataMsg:SerilizeData( numEquipData, requestSync ) 
+  d("Serilizing data")
+  d(self:ExternalToInternalId("mystical", 693))
+  d(self.internalId["mystical"])
+  d("---")
+  local formattedData = { 
+    ["requestSync"] = requestSync, 
+    ["mystical"] = 0, 
+    ["NormalSets"] = {}, 
+    ["WeaponSets"] = {},
+    ["UndauntedSets"] = {},  
+  }
+  for setId, setData in pairs( numEquipData ) do 
+    local setType = self:GetSetType( setId ) 
+    if setType == SET_TYPE_NORMAL then 
+      table.insert(formattedData["NormalSets"], {
+        id=setId, 
+        body=setData.body, 
+        front = setData.front, 
+        back = setData.back} )
+    elseif setType == SET_TYPE_MYSTICAL then
+      formattedData["mystical"] = self:ExternalToInternalId("mystical", setId)
+    elseif setType == SET_TYPE_UNDAUNTED then 
+      table.insert(formattedData["UndauntedSets"], {
+        id=self:ExternalToInternalId("undaunted", setId), 
+        body = setData.body
+      })
+    elseif setType == SET_TYPE_WEAPON then 
+      table.insert( formattedData["WeaponSets"], {
+        id = self:ExternalToInternal("weapon", setId),
+        front = setData.front,
+        back = setData.back
+      })
+    end
+  end
+  return formattedData
+end
+
+
+function DataMsg:DeserilizeData( rawData ) 
+  local data = {}
+  if not ZO_IsTableEmpty(rawData.WeaponSets) then 
+    for _, setData in ipairs(rawData.WeaponSets) do 
+      local setId = self:InternalToExternalId("weapon", setData.id )
+      data[setId] = Template_BarListSubtables("numeric", 0, setData.front, setData.back)
+    end
+  end
+  if not ZO_IsTableEmpty(rawData.UndauntedSets) then 
+    for _, setData in pairs(rawData.UndauntedSets) do 
+      local setId = self:InternalToExternalId("undaunted", setData.id )
+      data[setId] = Template_BarListSubtables("numeric", setData.body)
+    end
+  end
+  if rawData.mystical ~= 0 then 
+    local setId = self:InternalToExternalId("mystical", rawData.mystical )
+    data[setId] = Template_BarListSubtables("numeric", 1)
+  end
+  for _, setData in ipairs(rawData.NormalSets) do 
+    data[setData.id] = Template_BarListSubtables("numeric", setData.body, setData.front, setData.back)
+  end
+  if rawData.requestSync then 
+    --- send message with current setup 
+  end 
+  return data
 end
 
 
 
-function DataMsg:DeserilizeData_new( rawData ) 
-  local data
-  if rawData.version == 1 then 
 
-  
-  end
-  if rawData.request then 
-    -- send current setup 
-  end
-end
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   local unitName = GetUnitName(unitTag)
-  local data = self:DeserilizeData(rawData.SetData)
-  d(rawData.request)
-  if ExoyDev then d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) end
+  --local data = self:DeserilizeData(rawData.SetData)
+  if ExoyDev then 
+    d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
+    d(rawData)
+    d("----")
+    d(self:DeserilizeData( rawData) )
+  end
   if unitName == playerName then 
     --- verification, that my message was send
   else 
@@ -737,60 +815,80 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
 end
 
 
-function DataMsg:SendSetup( numEquip ) 
-  local data = self:SerilizeData( numEquip ) 
-  local sendData = {
-    ["SetData"] = data,
-    ["request"] = true,
-  }
-  self.handler:Send( sendData ) 
+function DataMsg:SendData( numEquip ) 
+  local data = self:SerilizeData( numEquip, false ) 
+  d("formatted data for sending")
+  d(data)
+  self.handler:Send( data ) 
 end
 
 
-function DataMsg:SerilizeData( data ) 
-  -- format data for data broadcast
-  local formattedData = {}
-  for setId, setData in pairs( data ) do 
-    table.insert(formattedData, {
-      id = setId, 
-      body = setData.body, 
-      front = setData.front, 
-      back = setData.back,
-    } )
+function DataMsg:DefineIdMapping() 
+  local mysticalList = {}
+  local twoBoniSets = {} 
+  for ii = 0, 2047 do 
+    local maxEquip = GetMaxEquip( ii )
+    if maxEquip == 1 then table.insert(mysticalList, ii) end
+    if maxEquip == 2 then table.insert(twoBoniSets, ii) end 
+  end 
+
+  -- filter two boni into undaunted and abilityAltering 
+  -- based on the fact that all abilityAltering sets have a perfected and normal version 
+  local twoBoniSetsInverted = InvertTable(twoBoniSets)
+  local abilityAlteringList = {}
+  for setId, key in pairs( twoBoniSetsInverted ) do 
+    local unperfSetId = GetItemSetUnperfectedSetId(setId)
+    if unperfSetId ~= 0 then 
+      table.insert( abilityAlteringList, unperfSetId )
+      table.insert( abilityAlteringList, setId) 
+      twoBoniSetsInverted[unperfSetId] = nil 
+      twoBoniSetsInverted[setId] = nil
+    end
   end
-  return formattedData
+
+  self.internalId = {}
+  self.internalId["mystical"] = InvertTable(mysticalList)  
+  self.internalId["undaunted"] =  InvertTable(twoBoniSetsInverted)
+  self.internalId["weapon"] = abilityAlteringList
+
+  self.externalId = {}
+  self.externalId["mystical"] = mysticalList 
+  self.externalId["undaunted"] = twoBoniSetsInverted
+  self.externalId["weapon"] = InvertTable(abilityAlteringList)
 end
 
-
-function DataMsg:DeserilizeData( rawData ) 
-  local data = {}
-  for _, setData in ipairs(rawData) do  
-    data[setData.id] = {
-      ["body"] = setData.body, 
-      ["front"] = setData.front, 
-      ["back"] = setData.back,
-    }
-  end  
-  return data
-end
-
-
-function DataMsg:Initialize() 
-  if not LibGroupBroadcast then return end
+function DataMsg:InitMsgHandler() 
   local LGB = LibGroupBroadcast
   self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
   self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
-  local dataArray = LGB.CreateArrayField( LGB.CreateTableField("SetData", {
+  local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
       LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),
       LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
       LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
       LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
-    }), { minLength = 1, maxLength = 8 } )
-  self.handler:AddField( dataArray )
-  self.handler:AddField( LGB.CreateNumericField("version", {minValue = 0, maxValue = 3} ) )
-  self.handler:AddField( LGB.CreateFlagField("request") )
+    }), { minLength = 0, maxLength = 15 } )
+  local weaponSetsArray = LGB.CreateArrayField( LGB.CreateTableField("WeaponSets", {
+      LGB.CreateNumericField("id", { minValue = 1, maxValue = 32}),
+      LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}), 
+      LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}), 
+    }), { minLength = 0, maxLength = 2 } )  
+  local undauntedSetsArray = LGB.CreateArrayField( LGB.CreateTableField("UndauntedSets", {
+      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),
+      LGB.CreateNumericField("body", {minValue = 1, maxValue = 2}) 
+    }), { minLength = 0, maxLength = 2 } )
+  self.handler:AddField( normalSetsArray )
+  self.handler:AddField( weaponSetsArray )
+  self.handler:AddField( undauntedSetsArray )
+  self.handler:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
+  self.handler:AddField( LGB.CreateFlagField("requestSync") )
   self.handler:OnData( function(...) self:OnIncomingMsg(...) end )  
   self.handler:Finalize()
+end
+
+function DataMsg:Initialize() 
+  self:DefineIdMapping()
+  self:InitMsgHandler() 
+
   return self
 end
 
@@ -799,28 +897,29 @@ end
 --[[ -------------------------- ]]
 
 
-
 function BroadcastManager:UpdateActivityState()
   self.active = GroupManager.isGrouped
 end 
 
-
 function BroadcastManager:SendData(numEquip) 
-  if not self.active then return end 
+  --if not self.active then return end 
+  --d("internal")
+  --d(self.DataMsg.internalId) 
+  --d("external") 
+  --d(self.DataMsg.externalId)
+  --d("----")
+  --d(self.DataMsg.internalId[12])
   self.DataMsg:SendData(numEquip)
   self.synchronized = true
 end
 
-
 function BroadcastManager:Initialize() 
+  if not LibGroupBroadcast then return end
   --- determine activity state  
   self:UpdateActivityState()
   self.synchronized = false 
   self.DataMsg = DataMsg:Initialize() 
 end
-
-
-
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -904,7 +1003,7 @@ function SlotManager:SendData() ---rename
     d("---------- end: relay data")
   end
   PlayerSets:UpdateData( numEquip, "player" ) 
-  BroadcastManager.DataMsg:SendSetup( numEquip ) 
+  BroadcastManager:SendData( numEquip ) 
   CallbackManager:FireCallbacks("DataUpdate", "player", nil, 
     "player",                    
     ExtendNumEquipData( numEquip ),   
@@ -1189,7 +1288,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
       if param[1] == "registry" then 
         Development.OutputRegistry()
       elseif param[1] == "groupsets" then 
-        Development.OutputGroupManager()         
+        Development.OutputGroupManager()   
+      elseif param[1] == "equipped" then 
+        Development.OutputEquippedSets()      
       end
     else 
       d("[LibSetDetection] command unknown")
@@ -1218,4 +1319,9 @@ end
 
 function Development.OutputGroupManager()
   d(GroupManager.groupSets)
+end
+
+function Development.OutputLookupTables()
+  d("Executing LookupTable Init")
+  Init_LookupTables() 
 end
