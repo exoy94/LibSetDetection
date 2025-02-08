@@ -227,7 +227,7 @@ function CallbackManager:Initialize()
   }
 end
 
-CallbackManager.results = {
+CallbackManager.resultList = {
   [CALLBACK_RESULT_SUCCESS] = "success",
   [CALLBACK_RESULT_INVALID_CALLBACK] = "invalid callback",
   [CALLBACK_RESULT_INVALID_UNITTYPE] = "invalid unitType",
@@ -236,8 +236,6 @@ CallbackManager.results = {
   [CALLBACK_RESULT_DUPLICATE_NAME] = "duplicate name",
   [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
 }
-
-
 
 
 function CallbackManager:UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
@@ -593,48 +591,8 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 
-function GroupManager:Initialize() 
-  self.debug = true
-  self.groupSets = {}
-
-  --- local functions reference 
-  --local function _OnGroupUpdate() self:OnGroupMemberUpdate() end
-  local function _OnGroupMemberJoined(...) self:OnGroupMemberJoined(...) end
-  local function _OnGroupMemberLeft(...) self:OnGroupMemberLeft(...) end 
-
-  --- Events 
-  --EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, _OnGroupUpdate)
-  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, _OnGroupMemberJoined )
-  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, _OnGroupMemberLeft )
-end
 
 
-function GroupManager:OnGroupUpdate()
-  -- unitTags where changed, dont know yet if I need to do anything at that point 
-end
-
-
-function GroupManager:OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
-  if isLocalPlayer then 
-    --- can use to determine, that i either entered a group or created one 
-    --- when I join a group with members already, only ny name comes up 
-  else 
-    local unitName = zo_strformat( SI_UNIT_NAME, charName ) -- aligns format with unit name for unitTag
-
-  end
-end
-
-
-function GroupManager:OnGroupMemberLeft(_, charName, _, isLocalPlayer)
-  if isLocalPlayer then 
-
-  else 
-    local unitName = zo_strformat( SI_UNIT_NAME, charName )   -- aligns format with unit name for unitTag
-    --- occurs when i leave group in some way 
-    --- when I leave, event is also triggered 
-      self.groupSets[unitName] = nil  -- remove SetManager instance
-  end  
-end
 
 
 function GroupManager:UpdateSetData( unitName, unitTag, data ) 
@@ -648,6 +606,7 @@ function GroupManager:UpdateSetData( unitName, unitTag, data )
 end
 
 
+
 function GroupManager:GetSetManager( unitTag ) 
   local unitName = GetUnitName(unitTag)
   -- check if there exists a set manager 
@@ -658,6 +617,34 @@ function GroupManager:GetSetManager( unitTag )
   end
 
 end 
+
+
+function GroupManager:Initialize() 
+  self.debug = true
+  self.isGrouped = IsUnitGrouped("player") 
+  self.groupSets = {}
+
+  --- events
+  local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
+    if isLocalPlayer then 
+      self.isGrouped = true
+      BroadcastManager:UpdateActivityState()
+    else 
+      local unitName = zo_strformat( SI_UNIT_NAME, charName ) 
+    end
+  end
+  local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
+    if isLocalPlayer then 
+      self.isGrouped = false 
+      BroadcastManager:UpdateActivityState()
+    else 
+      local unitName = zo_strformat( SI_UNIT_NAME, charName )   
+        self.groupSets[unitName] = nil  
+    end 
+  end
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, OnGroupMemberJoined )
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, OnGroupMemberLeft )
+end
 
 -- GroupManager activates/deactives functionality when a player is joining/leaving a group 
 -- or group members change 
@@ -705,30 +692,50 @@ end
 --[[ -- Data Msg -- ]]
 --[[ -------------- ]]
 
-DataMsg = {}
+--- Serilizer 
+local function Serilizer_V1( rawData ) 
 
-function DataMsg:Initialize() 
-  if not LibGroupBroadcast then return end
-  local LGB = LibGroupBroadcast
-  self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
-  self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
-  local dataArray = LGB.CreateArrayField( LGB.CreateTableField("SetData", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),
-      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
-      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
-      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
-    }), { minLength = 1, maxLength = 8 } )
-  self.handler:AddField(dataArray)
-  self.handler:AddField( LGB.CreateFlagField("request") )
-  local function _OnIncomingMsg(...)
-    self:OnIncomingMsg(...)
-  end
-  self.handler:OnData( _OnIncomingMsg )  
-  self.sucessfullFinalized = self.handler:Finalize()
-  return self
 end
 
--- /script d(LibSetDetection.output)
+--- Deserilizer 
+local function Deserilizer_V1( rawData ) 
+
+end
+
+
+DataMsg = {}
+
+function DataMsg:SerilizeData_new() 
+  local version = 1
+
+
+end
+
+
+
+function DataMsg:DeserilizeData_new( rawData ) 
+  local data
+  if rawData.version == 1 then 
+
+  
+  end
+  if rawData.request then 
+    -- send current setup 
+  end
+end
+
+function DataMsg:OnIncomingMsg(unitTag, rawData) 
+  local unitName = GetUnitName(unitTag)
+  local data = self:DeserilizeData(rawData.SetData)
+  d(rawData.request)
+  if ExoyDev then d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) end
+  if unitName == playerName then 
+    --- verification, that my message was send
+  else 
+    GroupManager:UpdateSetData( unitName, unitTag, data ) 
+  end
+end
+
 
 function DataMsg:SendSetup( numEquip ) 
   local data = self:SerilizeData( numEquip ) 
@@ -768,29 +775,51 @@ function DataMsg:DeserilizeData( rawData )
 end
 
 
-function DataMsg:OnIncomingMsg(unitTag, rawData) 
-  local unitName = GetUnitName(unitTag)
-  local data = self:DeserilizeData(rawData.SetData)
-  d(rawData.request)
-  if ExoyDev then d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) end
-  if unitName == playerName then 
-    GroupManager:UpdateSetData( unitName, unitTag, data ) 
-  else 
-    GroupManager:UpdateSetData( unitName, unitTag, data ) 
-  end
+function DataMsg:Initialize() 
+  if not LibGroupBroadcast then return end
+  local LGB = LibGroupBroadcast
+  self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
+  self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
+  local dataArray = LGB.CreateArrayField( LGB.CreateTableField("SetData", {
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),
+      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
+      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
+      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
+    }), { minLength = 1, maxLength = 8 } )
+  self.handler:AddField( dataArray )
+  self.handler:AddField( LGB.CreateNumericField("version", {minValue = 0, maxValue = 3} ) )
+  self.handler:AddField( LGB.CreateFlagField("request") )
+  self.handler:OnData( function(...) self:OnIncomingMsg(...) end )  
+  self.handler:Finalize()
+  return self
+end
+
+--[[ -------------------------- ]]
+--[[ ----- End of DataMsg ----- ]]
+--[[ -------------------------- ]]
+
+
+
+function BroadcastManager:UpdateActivityState()
+  self.active = GroupManager.isGrouped
+end 
+
+
+function BroadcastManager:SendData(numEquip) 
+  if not self.active then return end 
+  self.DataMsg:SendData(numEquip)
+  self.synchronized = true
 end
 
 
---[[ ----- End of DataMsg ----- ]]
-
 function BroadcastManager:Initialize() 
+  --- determine activity state  
+  self:UpdateActivityState()
+  self.synchronized = false 
   self.DataMsg = DataMsg:Initialize() 
 end
 
-function BroadcastManager:SendData(numEquip) 
---- toDo for early outs
-  self.DataMsg:SendData(numEquip)
-end
+
 
 
 
@@ -1086,6 +1115,13 @@ end
 function LibSetDetection.UnregisterDataUpdate( ... ) 
   return CallbackManager:UpdateRegistry( false, "DataUpdate", ...)
 end
+
+
+--- Development 
+function LibSetDetection.DecodeCallbackResult( result )   
+  return CallbackManager.resultList[result]
+end 
+
 
 
 --[[ ------------------- ]]
