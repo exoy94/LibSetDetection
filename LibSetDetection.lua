@@ -8,6 +8,7 @@
 ---   und es wird jedesmal danach gesucht 
 
 
+--- rename barList to slotCategories
 
 
 LibSetDetection = LibSetDetection or {}
@@ -33,7 +34,7 @@ local Development = {}      -- Dev
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
---- Todo: rename!
+--- Template_SlotCategorySubtable
 local function Template_BarListSubtables( initType, initBody, initFront, initBack )
   if initType == "table" then return { ["body"] = {}, ["front"] = {}, ["back"] = {} } end
   if initType == "numeric" then 
@@ -109,6 +110,12 @@ local CALLBACK_RESULT_DUPLICATE_NAME = 5
 local CALLBACK_RESULT_UNKNOWN_NAME = 6
 
 
+local SET_TYPE_NORMAL = 0 
+local SET_TYPE_MYSTICAL = 1 
+local SET_TYPE_UNDAUNTED = 2 
+local SET_TYPE_WEAPON = 3
+
+
 --- change types for events (global) 
 LSD_CHANGE_TYPE_UNEQUIPPED = 1 
 LSD_CHANGE_TYPE_EQUIPPED = 2
@@ -171,7 +178,7 @@ local function GetSetName( setId )
 end 
 
 local function GetMaxEquip( setId )
-  local exception = {
+  local exception = { --- include exceptions table in lookup table area
     [695]= 5, ---check id
   }
   
@@ -702,13 +709,6 @@ end
 --[[ -------------- ]]
 
 DataMsg = {}
-
-
-local SET_TYPE_NORMAL = 0 
-local SET_TYPE_MYSTICAL = 1 
-local SET_TYPE_UNDAUNTED = 2 
-local SET_TYPE_WEAPON = 3
-
 
 function DataMsg:GetSetType( setId )  
   if self:ExternalToInternalId("mystical", setId) then return SET_TYPE_MYSTICAL 
