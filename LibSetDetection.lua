@@ -878,28 +878,30 @@ function DataMsg:DefineIdMapping()
   self.externalId["weapon"] = InvertTable(abilityAlteringList)
 end
 
+--- start with zero or 1? to encode more underlying messages? 
+
 function DataMsg:InitMsgHandler() 
   local LGB = LibGroupBroadcast
   self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
   self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
   local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --- start with zero or 1?
-      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
-      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
-      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
+      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
+      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
+      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
     }), { minLength = 0, maxLength = 15 } )
   local weaponSetsArray = LGB.CreateArrayField( LGB.CreateTableField("WeaponSets", {
-      LGB.CreateNumericField("id", { minValue = 1, maxValue = 32}),  --- start with zero or 1?
-      LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}), 
-      LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}), 
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 31}),     -- 5 bit
+      LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
+      LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
     }), { minLength = 0, maxLength = 2 } )  
   local undauntedSetsArray = LGB.CreateArrayField( LGB.CreateTableField("UndauntedSets", {
-      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),  --- start with zero or 1?
-      LGB.CreateNumericField("body", {minValue = 1, maxValue = 2}) 
+      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),  -- 7 bit
+      LGB.CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
     }), { minLength = 0, maxLength = 2 } )
-  self.handler:AddField( normalSetsArray )
-  self.handler:AddField( weaponSetsArray )
-  self.handler:AddField( undauntedSetsArray )
+  self.handler:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
+  self.handler:AddField( weaponSetsArray ) -- 2 bit length + x* 9 bit
+  self.handler:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
   self.handler:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
   self.handler:AddField( LGB.CreateFlagField("requestSync") )
   self.handler:OnData( function(...) self:OnIncomingMsg(...) end )  
@@ -930,7 +932,7 @@ function BroadcastManager:SendData(numEquip)
   --d(self.DataMsg.externalId)
   --d("----")
   --d(self.DataMsg.internalId[12])
-  self.DataMsg:SendData(numEquip)
+  ---self.DataMsg:SendData(numEquip)
   self.synchronized = true
 end
 
