@@ -26,8 +26,7 @@ local Development = {}      -- Dev
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
---- Template_SlotCategorySubtable
-local function Template_BarListSubtables( initType, initBody, initFront, initBack )
+local function Template_SlotCategorySubtables( initType, initBody, initFront, initBack )
   if initType == "table" then return { ["body"] = {}, ["front"] = {}, ["back"] = {} } end
   if initType == "numeric" then 
     _initBody = initBody or 0 
@@ -84,7 +83,7 @@ end
 --[[ -- Local Variables -- ]]
 --[[ --------------------- ]]
 
-local barList = {"body", "front", "back"}
+local slotCategories = {"body", "front", "back"}
 
 local slotList = {
   ["body"] = {
@@ -109,8 +108,10 @@ local slotList = {
   }
 }
 
+
 local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
 local equipSlotList = MergeTables( slotList["body"], weaponSlotList )
+
 
 local twoHanderList = {
   [WEAPONTYPE_TWO_HANDED_SWORD] = "Greatsword",     --  4
@@ -125,7 +126,7 @@ local twoHanderList = {
 
 
 local exceptionList = {
-  [695] = { ["maxEquip"] = 5 } }  -- Shattered-Fate
+  [695] = { ["maxEquip"] = 5 }  -- Shattered-Fate
 }
 
 
@@ -137,6 +138,7 @@ local CALLBACK_RESULT_INVALID_FILTER = 3
 local CALLBACK_RESULT_INVALID_NAME = 4 
 local CALLBACK_RESULT_DUPLICATE_NAME = 5
 local CALLBACK_RESULT_UNKNOWN_NAME = 6
+
 
 local SET_TYPE_NORMAL = 0 
 local SET_TYPE_MYSTICAL = 1 
@@ -158,52 +160,55 @@ LSD_CHANGE_TYPE_EQUIPPED = 2
 LSD_CHANGE_TYPE_UPDATE = 3
 
 
+
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
 
-local function HasException(setId, attribute) 
-  local hasExceptions = excpetionList[setId]
-
-  if not attribute then return hasExceptions end
-
-  local hasSpecificException = hasExceptions[attribute] 
-  return hasSpecificException 
+local function CheckException(setId, attribute) 
+  if not setId then return exceptionList end  -- returns entire list, if no setId is provided
+  local hasExceptions = exceptionList[setId]  -- checks if there is an entry for the specific set
+  if not attribute then return hasExceptions end  -- returns all entries for specific set 
+  if not hasExceptions then return end  -- returns nil, if there are no entries
+  local hasSpecificException = hasExceptions[attribute] -- checks for specific entry, if provided
+  return hasSpecificException  -- returns the specific entry or nil
 end
 
-LibSetDetection.HasException = HasException
 
 local function ConvertCharToUnitName( charName ) 
   return zo_strformat( SI_UNIT_NAME, charName )
 end
+
 
 local function GetSetId( slotId )
   local _, _, _, _, _, setId = GetItemLinkSetInfo( GetItemLink(BAG_WORN, slotId) )
   return setId
 end
 
+
 local function IsWeaponSlot( slotId )
   return weaponSlotList[slotId] ~= nil
 end
+
 
 local function IsTwoHander( slotId )
   local weaponType = GetItemWeaponType(BAG_WORN, slotId)
   return twoHanderList[weaponType] ~= nil
 end
 
+
 local function GetSetName( setId ) 
   local _, setName = GetItemSetInfo( setId )
   return setName
 end 
 
+
 local function GetMaxEquip( setId )
-  
   local _, _, _, _, _, maxEquip = GetItemSetInfo( setId ) 
-
-  maxEquip = HandleExceptions(setId, "maxEquip", maxEquip)
-
+  maxEquip = CheckException(setId, "maxEquip") or maxEquip
   return maxEquip
 end
+
 
 local function ConvertToUnperfected( setId ) 
   local unperf = GetItemSetUnperfectedSetId( setId ) 
@@ -213,6 +218,7 @@ local function ConvertToUnperfected( setId )
     return unperf 
   end
 end
+
 
 local function ExtendNumEquipData( numEquip ) 
   local numEquipExtended = ZO_DeepTableCopy(numEquip)
@@ -454,8 +460,8 @@ function SetManager:ConvertDataToUnperfected()
       numEquipTemp[unperfSetId] = ZO_ShallowTableCopy(self.numEquip[perfSetId])
     else 
     -- if unperfected pieces are equipped, add perfected ones
-      for barName, numEquip in pairs( self.numEquip[perfSetId] ) do 
-        numEquipTemp[unperfSetId][barName] = numEquipTemp[unperfSetId][barName] + numEquip
+      for slotCategory, numEquip in pairs( self.numEquip[perfSetId] ) do 
+        numEquipTemp[unperfSetId][slotCategory] = numEquipTemp[unperfSetId][slotCategory] + numEquip
       end
     end
   end
@@ -518,8 +524,8 @@ function SetManager:DetermineChanges()
   for setId, activeState in pairs( self.activeState ) do -- check all equipped sets
     if activeState then -- if they are currently active:
       if self.archive.activeState[setId] then   -- if they were aleady active
-        for _, barName in pairs (barList) do    -- check if active for each individual bar
-          if self.archive.activeOnBar[setId][barName] ~= self.activeOnBar[setId][barName] then 
+        for _, category in pairs (slotCategories) do    -- check if active for each individual bar
+          if self.archive.activeOnBar[setId][category] ~= self.activeOnBar[setId][category] then 
             changeList[setId] = LSD_CHANGE_TYPE_UPDATE  -- if at least one bar has changed --> updated
             break
           end
@@ -572,7 +578,7 @@ function SetManager:FireCallbacks( changeList )
       activeOnBack =  self.activeOnBar[setId]["back"]
     end
     CallbackManager:FireCallbacks( "SetChange", self.unitType, setId, 
-      changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack) 
+      changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack, CheckException(setId)) 
   end
 end
 
@@ -588,12 +594,12 @@ end
 
 function SetManager:GetActiveSets() 
   local _stateList = {}
-  local _onBarList = Template_BarListSubtables{"table"}
+  local _onBarList = Template_SlotCategorySubtables{"table"}
   for setId, activeState in pairs( self.activeState ) do 
     if activeState then table.insert(_stateList, setId) end
-    for _, barName in pairs(barList) do 
-      if self.activeOnBar[setId][barName] then 
-        table.insert(_onBarList[barName], setId)
+    for _, category in pairs(slotCategories) do 
+      if self.activeOnBar[setId][category] then 
+        table.insert(_onBarList[category], setId)
       end
     end
   end
@@ -602,9 +608,9 @@ end
 
 
 function SetManager:GetNumEquip(setId)
-  local _numEquip = Template_BarListSubtables("numeric")
-  for _, barName in pairs(barList) do 
-    _numEquip[barName] = self.numEquip[setId][barName]
+  local _numEquip = Template_SlotCategorySubtables("numeric")
+  for _, category in pairs(slotCategories) do 
+    _numEquip[category] = self.numEquip[setId][category]
   end
   return _numEquip["body"], numEquip["front"], numEquip["back"]  
 end
@@ -787,21 +793,21 @@ function DataMsg:DeserilizeData( rawData )
   if not ZO_IsTableEmpty(rawData.WeaponSets) then 
     for _, setData in ipairs(rawData.WeaponSets) do 
       local setId = self:InternalToExternalId("weapon", setData.id )
-      data[setId] = Template_BarListSubtables("numeric", 0, setData.front, setData.back)
+      data[setId] = Template_SlotCategorySubtables("numeric", 0, setData.front, setData.back)
     end
   end
   if not ZO_IsTableEmpty(rawData.UndauntedSets) then 
     for _, setData in pairs(rawData.UndauntedSets) do 
       local setId = self:InternalToExternalId("undaunted", setData.id )
-      data[setId] = Template_BarListSubtables("numeric", setData.body)
+      data[setId] = Template_SlotCategorySubtables("numeric", setData.body)
     end
   end
   if rawData.mystical ~= 0 then 
     local setId = self:InternalToExternalId("mystical", rawData.mystical )
-    data[setId] = Template_BarListSubtables("numeric", 1)
+    data[setId] = Template_SlotCategorySubtables("numeric", 1)
   end
   for _, setData in ipairs(rawData.NormalSets) do 
-    data[setData.id] = Template_BarListSubtables("numeric", setData.body, setData.front, setData.back)
+    data[setData.id] = Template_SlotCategorySubtables("numeric", setData.body, setData.front, setData.back)
   end
   if rawData.requestSync then 
     --- send message with current setup 
@@ -1004,11 +1010,11 @@ end
 
 function SlotManager:SendData() ---rename
   local numEquip = {} 
-  for _, barName in pairs(barList) do  -- body, front, back 
-    for slotId, _ in pairs( slotList[barName]) do 
+  for _, category in pairs(slotCategories) do  -- body, front, back 
+    for slotId, _ in pairs( slotList[category]) do 
       local setId = self.equippedGear[slotId] 
-      numEquip[setId] = numEquip[setId] or Template_BarListSubtables("numeric") 
-      numEquip[setId][barName] = numEquip[setId][barName] + 1
+      numEquip[setId] = numEquip[setId] or Template_SlotCategorySubtables("numeric") 
+      numEquip[setId][category] = numEquip[setId][category] + 1
     end
   end 
   numEquip[0] = nil
@@ -1164,10 +1170,11 @@ end
 
 
 --- Advanced 
+LibSetDetection.CheckException = CheckException
+
 function LibSetDetection.GetPlayerEquippedGear() 
   return SlotManager.equippedGear 
 end
-
 
 function LibSetDetection.GetUnitRawNumEquip() -- return data while still separating bettween normal and perf
 
@@ -1267,9 +1274,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
     end
     d("--------------------")
   elseif cmd == "equip" then 
-    local OutputSets = function(barName) 
-      d("--- "..barName.." --- ")
-      for slotId, slotName in pairs( slotList[string.lower(barName)] ) do 
+    local OutputSets = function(slotCategory) 
+      d("--- "..slotCategory.." --- ")
+      for slotId, slotName in pairs( slotList[string.lower(slotCategory)] ) do 
         local setId = GetSetId( slotId )
         d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetName(setId) , setId ) )
       end  
