@@ -1,34 +1,26 @@
---[[ ------------------- ]]
---[[ -- ToDo / Notes  -- ]]
---[[ ------------------- ]]
-
---- check if the setId is provided when the mystical is equipped, that disables all set effects 
---- referenzen mit doppel punkt übergeben nur pointer, mit punkt hängt es davon ab, ob der tabellen 
----   eintrag vorher schon existiert (dann referenz auf den eintrag), ansonsten ist es nur ein sybolic value 
----   und es wird jedesmal danach gesucht 
-
-
---- rename barList to slotCategories
-
-
 LibSetDetection = LibSetDetection or {}
+
 local libName = "LibSetDetection"
 local libVersion = 4
 local libDebug = false 
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
---[[ -------------- ]]
---[[ -- Entities -- ]]
---[[ -------------- ]]
+
+
+--[[ ----------------------- ]]
+--[[ -- Internal Entities -- ]]
+--[[ ----------------------- ]]
  
 local CallbackManager = {}  -- CM 
 local BroadcastManager = {} -- BM
-local SetManager = {}      -- SD 
+local SetManager = {}       -- SM 
 local GroupManager = {}     -- GM
 local PlayerSets = {}       -- PS
 local SlotManager = {}      -- SM       
 local Development = {}      -- Dev
+
+
 
 --[[ --------------- ]]
 --[[ -- Templates -- ]]
@@ -45,81 +37,6 @@ local function Template_BarListSubtables( initType, initBody, initFront, initBac
   end
 end
 
-
---[[ ------------------- ]]
---[[ -- Lookup Tables -- ]]
---[[ ------------------- ]]
-
-local function MergeSlotTables(t1, t2)
-  local t = {}
-  for k, v in pairs(t1) do
-     t[k] = v
-  end
-	for k, v in pairs(t2) do
-	   t[k] = v
-	end
-	return t
-end
-
-local barList = {"body", "front", "back"}
-
-local slotList = {
-  ["body"] = {
-    [EQUIP_SLOT_HEAD] = "Head",                   --  0
-    [EQUIP_SLOT_NECK] = "Necklace",               --  1
-    [EQUIP_SLOT_CHEST] = "Chest",                 --  2
-    [EQUIP_SLOT_SHOULDERS] = "Shoulders",         --  3
-    [EQUIP_SLOT_WAIST] = "Waist",                 --  6
-    [EQUIP_SLOT_LEGS] = "Legs",                   --  8
-    [EQUIP_SLOT_FEET] = "Feet",                   --  9
-    [EQUIP_SLOT_RING1] = "Ring1",                 -- 11
-    [EQUIP_SLOT_RING2] = "Ring2",                 -- 12
-    [EQUIP_SLOT_HAND] = "Hand",                   -- 16
-  },
-  ["front"] = {
-    [EQUIP_SLOT_MAIN_HAND] = "MainFront",         --  4
-    [EQUIP_SLOT_OFF_HAND] = "OffFront",           --  5
-  },
-  ["back"] = {
-    [EQUIP_SLOT_BACKUP_MAIN] = "MainBack",        -- 20
-    [EQUIP_SLOT_BACKUP_OFF] = "OffBack",          -- 21
-  }
-}
-
-local weaponSlotList = MergeSlotTables( slotList["front"], slotList["back"] )
-local equipSlotList = MergeSlotTables( slotList["body"], weaponSlotList )
-
-local twoHanderList = {
-  [WEAPONTYPE_TWO_HANDED_SWORD] = "Greatsword",     --  4
-  [WEAPONTYPE_TWO_HANDED_AXE] = "Battleaxe",        --  5
-  [WEAPONTYPE_TWO_HANDED_HAMMER] = "Battlehammer",  --  6
-  [WEAPONTYPE_BOW] = "Bow",                         --  8
-  [WEAPONTYPE_HEALING_STAFF] = "Healingstaff",      --  9
-  [WEAPONTYPE_FIRE_STAFF] = "Firestaff",            -- 12
-  [WEAPONTYPE_FROST_STAFF] = "Froststaff",          -- 13
-  [WEAPONTYPE_LIGHTNING_STAFF] = "Lightningstaff",  -- 15
-}
-
---- result code definition for callback manager
-local CALLBACK_RESULT_SUCCESS = 0 
-local CALLBACK_RESULT_INVALID_CALLBACK = 1 
-local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
-local CALLBACK_RESULT_INVALID_FILTER = 3
-local CALLBACK_RESULT_INVALID_NAME = 4 
-local CALLBACK_RESULT_DUPLICATE_NAME = 5
-local CALLBACK_RESULT_UNKNOWN_NAME = 6
-
-
-local SET_TYPE_NORMAL = 0 
-local SET_TYPE_MYSTICAL = 1 
-local SET_TYPE_UNDAUNTED = 2 
-local SET_TYPE_WEAPON = 3
-
-
---- change types for events (global) 
-LSD_CHANGE_TYPE_UNEQUIPPED = 1 
-LSD_CHANGE_TYPE_EQUIPPED = 2
-LSD_CHANGE_TYPE_UPDATE = 3
 
 
 --[[ ------------------------------- ]]
@@ -150,9 +67,111 @@ local function InvertTable( t )
   return invertedT
 end
 
+local function MergeTables(t1, t2)
+  local t = {}
+  for k, v in pairs(t1) do
+     t[k] = v
+  end
+	for k, v in pairs(t2) do
+	   t[k] = v
+	end
+	return t
+end
+
+
+
+--[[ --------------------- ]]
+--[[ -- Local Variables -- ]]
+--[[ --------------------- ]]
+
+local barList = {"body", "front", "back"}
+
+local slotList = {
+  ["body"] = {
+    [EQUIP_SLOT_HEAD] = "Head",                   --  0
+    [EQUIP_SLOT_NECK] = "Necklace",               --  1
+    [EQUIP_SLOT_CHEST] = "Chest",                 --  2
+    [EQUIP_SLOT_SHOULDERS] = "Shoulders",         --  3
+    [EQUIP_SLOT_WAIST] = "Waist",                 --  6
+    [EQUIP_SLOT_LEGS] = "Legs",                   --  8
+    [EQUIP_SLOT_FEET] = "Feet",                   --  9
+    [EQUIP_SLOT_RING1] = "Ring1",                 -- 11
+    [EQUIP_SLOT_RING2] = "Ring2",                 -- 12
+    [EQUIP_SLOT_HAND] = "Hand",                   -- 16
+  },
+  ["front"] = {
+    [EQUIP_SLOT_MAIN_HAND] = "MainFront",         --  4
+    [EQUIP_SLOT_OFF_HAND] = "OffFront",           --  5
+  },
+  ["back"] = {
+    [EQUIP_SLOT_BACKUP_MAIN] = "MainBack",        -- 20
+    [EQUIP_SLOT_BACKUP_OFF] = "OffBack",          -- 21
+  }
+}
+
+local weaponSlotList = MergeTables( slotList["front"], slotList["back"] )
+local equipSlotList = MergeTables( slotList["body"], weaponSlotList )
+
+local twoHanderList = {
+  [WEAPONTYPE_TWO_HANDED_SWORD] = "Greatsword",     --  4
+  [WEAPONTYPE_TWO_HANDED_AXE] = "Battleaxe",        --  5
+  [WEAPONTYPE_TWO_HANDED_HAMMER] = "Battlehammer",  --  6
+  [WEAPONTYPE_BOW] = "Bow",                         --  8
+  [WEAPONTYPE_HEALING_STAFF] = "Healingstaff",      --  9
+  [WEAPONTYPE_FIRE_STAFF] = "Firestaff",            -- 12
+  [WEAPONTYPE_FROST_STAFF] = "Froststaff",          -- 13
+  [WEAPONTYPE_LIGHTNING_STAFF] = "Lightningstaff",  -- 15
+}
+
+
+local exceptionList = {
+  [695] = { ["maxEquip"] = 5 } }  -- Shattered-Fate
+}
+
+
+--- result code definition for callback manager
+local CALLBACK_RESULT_SUCCESS = 0 
+local CALLBACK_RESULT_INVALID_CALLBACK = 1 
+local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
+local CALLBACK_RESULT_INVALID_FILTER = 3
+local CALLBACK_RESULT_INVALID_NAME = 4 
+local CALLBACK_RESULT_DUPLICATE_NAME = 5
+local CALLBACK_RESULT_UNKNOWN_NAME = 6
+
+local SET_TYPE_NORMAL = 0 
+local SET_TYPE_MYSTICAL = 1 
+local SET_TYPE_UNDAUNTED = 2 
+local SET_TYPE_WEAPON = 3
+
+
+
+--[[ ---------------------- ]]
+--[[ -- Global Variables -- ]]
+--[[ ---------------------- ]]
+
+LSD_UNIT_TYPE_PLAYER = 1 
+LSD_UNIT_TYPE_GROUP = 2 
+LSD_UNIT_TYPE_ALL = 3
+ 
+LSD_CHANGE_TYPE_UNEQUIPPED = 1 
+LSD_CHANGE_TYPE_EQUIPPED = 2
+LSD_CHANGE_TYPE_UPDATE = 3
+
+
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
+
+local function HasException(setId, attribute) 
+  local hasExceptions = excpetionList[setId]
+
+  if not attribute then return hasExceptions end
+
+  local hasSpecificException = hasExceptions[attribute] 
+  return hasSpecificException 
+end
+
+LibSetDetection.HasException = HasException
 
 local function ConvertCharToUnitName( charName ) 
   return zo_strformat( SI_UNIT_NAME, charName )
@@ -178,15 +197,11 @@ local function GetSetName( setId )
 end 
 
 local function GetMaxEquip( setId )
-  local exception = { --- include exceptions table in lookup table area
-    [695]= 5, ---check id
-  }
   
   local _, _, _, _, _, maxEquip = GetItemSetInfo( setId ) 
 
-  if exception[setId] then
-    maxEquip = exception[setId]
-  end
+  maxEquip = HandleExceptions(setId, "maxEquip", maxEquip)
+
   return maxEquip
 end
 
