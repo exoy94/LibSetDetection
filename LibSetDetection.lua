@@ -862,18 +862,18 @@ function DataMsg:InitMsgHandler()
   self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
   self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
   local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --- start with zero or 1?
       LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),
       LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),
       LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),
     }), { minLength = 0, maxLength = 15 } )
   local weaponSetsArray = LGB.CreateArrayField( LGB.CreateTableField("WeaponSets", {
-      LGB.CreateNumericField("id", { minValue = 1, maxValue = 32}),
+      LGB.CreateNumericField("id", { minValue = 1, maxValue = 32}),  --- start with zero or 1?
       LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}), 
       LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}), 
     }), { minLength = 0, maxLength = 2 } )  
   local undauntedSetsArray = LGB.CreateArrayField( LGB.CreateTableField("UndauntedSets", {
-      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),
+      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),  --- start with zero or 1?
       LGB.CreateNumericField("body", {minValue = 1, maxValue = 2}) 
     }), { minLength = 0, maxLength = 2 } )
   self.handler:AddField( normalSetsArray )
