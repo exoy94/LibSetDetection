@@ -12,13 +12,14 @@ local EM = GetEventManager()
 --[[ -- Internal Entities -- ]]
 --[[ ----------------------- ]]
  
-local CallbackManager = {}  -- CM 
-local BroadcastManager = {} -- BM
-local SetManager = {}       -- SM 
-local GroupManager = {}     -- GM
-local PlayerSets = {}       -- PS
-local SlotManager = {}      -- SM       
-local Development = {}      -- Dev
+local BroadcastManager = {} 
+local CallbackManager = {}   
+local GroupManager = {}     
+local SetManager = {}        
+local SlotManager = {}       
+local PlayerSets = {}       
+local EmptySetManager = {}  
+local Development = {}      
 
 
 
@@ -76,6 +77,19 @@ local function MergeTables(t1, t2)
 	end
 	return t
 end
+
+
+
+--[[ ---------------------- ]]
+--[[ -- Global Variables -- ]]
+--[[ ---------------------- ]]
+ 
+LSD_CHANGE_TYPE_UNEQUIPPED = 1 
+LSD_CHANGE_TYPE_EQUIPPED = 2
+LSD_CHANGE_TYPE_UPDATE = 3
+
+LSD_EVENT_SET_CHANGE = 1 
+LSD_EVENT_DATA_UPDATE = 2
 
 
 
@@ -146,20 +160,10 @@ local SET_TYPE_UNDAUNTED = 2
 local SET_TYPE_WEAPON = 3
 
 
-
---[[ ---------------------- ]]
---[[ -- Global Variables -- ]]
---[[ ---------------------- ]]
-
-LSD_UNIT_TYPE_PLAYER = 1 
-LSD_UNIT_TYPE_GROUP = 2 
-LSD_UNIT_TYPE_ALL = 3
- 
-LSD_CHANGE_TYPE_UNEQUIPPED = 1 
-LSD_CHANGE_TYPE_EQUIPPED = 2
-LSD_CHANGE_TYPE_UPDATE = 3
-
-
+local eventList = {
+  [LSD_EVENT_SET_CHANGE] = "SetChange", 
+  [LSD_EVENT_DATA_UPDATE] = "DataUpdate",
+}
 
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
@@ -264,16 +268,6 @@ function CallbackManager:Initialize()
   }
 end
 
-CallbackManager.resultList = {
-  [CALLBACK_RESULT_SUCCESS] = "success",
-  [CALLBACK_RESULT_INVALID_CALLBACK] = "invalid callback",
-  [CALLBACK_RESULT_INVALID_UNITTYPE] = "invalid unitType",
-  [CALLBACK_RESULT_INVALID_FILTER] = "invalid filter", 
-  [CALLBACK_RESULT_INVALID_NAME] = "invalid name",
-  [CALLBACK_RESULT_DUPLICATE_NAME] = "duplicate name",
-  [CALLBACK_RESULT_UNKNOWN_NAME] = "unkown name",
-}
-
 
 function CallbackManager:UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
 
@@ -283,7 +277,6 @@ function CallbackManager:UpdateRegistry(action, registryType, uniqueId, callback
     return resultPlayer, resultGroup
   end
   --- verify general user inputs
-  if not IsFunction(callback) then return CALLBACK_RESULT_INVALID_CALLBACK end
   if not IsString(uniqueId) then return CALLBACK_RESULT_INVALID_NAME end 
   if not unitType == "player" or unitType == "group" then return CALLBACK_RESULT_INVALID_UNITTYPE end 
   --- set change registry
@@ -325,8 +318,12 @@ function CallbackManager:UpdateSetChangeRegistry( action, registryName, uniqueId
     local callbackList = self.registry[registryName][filterId]
     if action then    -- registration
       if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
-      if self.debug then d(zo_strformat("Reigster '<<1>>' in <<2>> (<<3>>)", uniqueId, registryName, filterId)) end
-      callbackList[uniqueId] = callback 
+      if IsFunction(callback) then 
+        if self.debug then d(zo_strformat("Reigster '<<1>>' in <<2>> (<<3>>)", uniqueId, registryName, filterId)) end
+        callbackList[uniqueId] = callback 
+      else 
+        return CALLBACK_RESULT_INVALID_CALLBACK 
+      end
     else  -- unregistration
       if not callbackList[uniqueId] then return CALLBACK_RESULT_UNKNOWN_NAME end 
       callbackList[uniqueId] = nil
@@ -343,6 +340,11 @@ function CallbackManager:UpdateDataUpdateRegistry( action, registryName, uniqueI
   local callbackList = self.registry[registryName] 
   if action then -- registration
     if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+    if IsFunction(callback) then 
+      callbackList[uniqueId] = callback 
+    else 
+      return CALLBACK_RESULT_INVALID_CALLBACK 
+    end
     callbackList[uniqueId] = callback 
   else -- unregistration
     if not callbackList[uniqueId] then return CALLBACK_RESULT_UNKNOWN_NAME end 
@@ -394,7 +396,7 @@ end
 
 SetManager.__index = SetManager 
 
-function SetManager:New( unitType, unitTag )
+function SetManager:New( unitType )
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
@@ -578,7 +580,7 @@ function SetManager:FireCallbacks( changeList )
       activeOnBack =  self.activeOnBar[setId]["back"]
     end
     CallbackManager:FireCallbacks( "SetChange", self.unitType, setId, 
-      changeType, setId, self.unitTag, activeOnBody, activeOnFront, activeOnBack, CheckException(setId)) 
+      setId, changeType, self.unitTag, activeOnBody, activeOnFront, activeOnBack, CheckException(setId)) 
   end
 end
 
@@ -628,10 +630,6 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 
-
-
-
-
 function GroupManager:UpdateSetData( unitName, unitTag, data ) 
   local _gs = self.groupSets  
   if _gs[unitName] then 
@@ -643,16 +641,14 @@ function GroupManager:UpdateSetData( unitName, unitTag, data )
 end
 
 
-
 function GroupManager:GetSetManager( unitTag ) 
   local unitName = GetUnitName(unitTag)
   -- check if there exists a set manager 
   if self.groupSets[unitName] then 
     return self.groupSets[unitName]
   else 
-    --return DefaultSetManager --- entity, that returns default values for all tables 
+    return EmptySetManager
   end
-
 end 
 
 
@@ -683,15 +679,6 @@ function GroupManager:Initialize()
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, OnGroupMemberLeft )
 end
 
--- GroupManager activates/deactives functionality when a player is joining/leaving a group 
--- or group members change 
--- needs to make sure, companions do not cause any problems  
--- will initialize data clean up when group members leave or the player leaves a group all together 
--- (even if somebody rejoints again, there could have been a set change in the mean time, so i always have to check anyways)
-
--- knowing who has addon active 
--- communication with broadcast manager to wake up, go dormant 
--- providing a unitTag characterName map? 
 
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -816,9 +803,6 @@ function DataMsg:DeserilizeData( rawData )
 end
 
 
-
-
-
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   local unitName = GetUnitName(unitTag)
   --local data = self:DeserilizeData(rawData.SetData)
@@ -878,12 +862,11 @@ function DataMsg:DefineIdMapping()
   self.externalId["weapon"] = InvertTable(abilityAlteringList)
 end
 
---- start with zero or 1? to encode more underlying messages? 
 
 function DataMsg:InitMsgHandler() 
   local LGB = LibGroupBroadcast
-  self.handlerId = LGB:RegisterHandler("IDK", "LibSetDetection")
-  self.handler = LGB:DeclareProtocol(self.handlerId, 42, "LibSetDetection_Data")
+  self.handler = LGB:RegisterHandler("LibSetDetection")
+  self.protocol = self.handler:DeclareProtocol(42, "SetData")
   local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
       LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
       LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
@@ -896,22 +879,23 @@ function DataMsg:InitMsgHandler()
       LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
     }), { minLength = 0, maxLength = 2 } )  
   local undauntedSetsArray = LGB.CreateArrayField( LGB.CreateTableField("UndauntedSets", {
-      LGB.CreateNumericField("id", { minValue = 1, maxValue = 128}),  -- 7 bit
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 127}),  -- 7 bit
       LGB.CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
     }), { minLength = 0, maxLength = 2 } )
-  self.handler:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
-  self.handler:AddField( weaponSetsArray ) -- 2 bit length + x* 9 bit
-  self.handler:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
-  self.handler:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
-  self.handler:AddField( LGB.CreateFlagField("requestSync") )
-  self.handler:OnData( function(...) self:OnIncomingMsg(...) end )  
-  self.handler:Finalize()
+  self.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
+  self.protocol:AddField( weaponSetsArray ) -- 2 bit length + x* 9 bit
+  self.protocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
+  self.protocol:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
+  self.protocol:AddField( LGB.CreateFlagField("requestSync") )
+  self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
+  self.protocol:Finalize()
 end
 
-function DataMsg:Initialize() 
+
+function DataMsg:Initialize(debug) 
+  self.debug = debug
   self:DefineIdMapping()
   self:InitMsgHandler() 
-
   return self
 end
 
@@ -938,10 +922,9 @@ end
 
 function BroadcastManager:Initialize() 
   if not LibGroupBroadcast then return end
-  --- determine activity state  
   self:UpdateActivityState()
   self.synchronized = false 
-  self.DataMsg = DataMsg:Initialize() 
+  self.DataMsg = DataMsg:Initialize( self.debug ) 
 end
 
 
@@ -1068,6 +1051,7 @@ local function Initialize()
   SlotManager:Initialize() 
 
   PlayerSets = SetManager:New("player") 
+  EmptySetManager = SetManager:New("group") --- need better name
 
   --- Register Events 
   EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, OnSlotUpdate )
@@ -1107,27 +1091,28 @@ local function ReadData( unitTag, setId, funcName )
 end
 
 
-local function AccessSetManager(unitTag, setId, funcName)
-  unitTag = unitTag or "player"
-  if unitTag == "all" then 
+local function AccessSetManager(unitType, setId, funcName)
+  unitType = unitType or "player"
+  if unitType == "all" then 
     local playerData = {ReadData("player", setId, funcName)}
     local groupData  = {AccessSetManager("group", setId, funcName)}
     local combinedData = groupData  
     combinedData.player = playerData 
     return combinedData
   end
-  if unitTag == "group" then 
+  if unitType == "group" then 
     local groupData = {} 
     local groupResult = {}
-    for i=1,GetGroupSize() do 
-      local tag = GetGroupUnitTagByIndex( tag ) 
-      if IsUnitPlayer(tag) then 
-        groupData[tag] = {ReadData(tag, setId, funcName)}
+    for ii=1,GetGroupSize() do 
+      local unitTag = GetGroupUnitTagByIndex( ii ) 
+      if IsUnitPlayer(unitTag) then 
+        groupData[unitTag] = {ReadData(unitTag, setId, funcName)}
       end
     end
     return groupData
   end 
   -- validate unitTag by checken for name of corresponding unit
+  local unitTag = unitType
   local unitName = GetUnitName(unitTag) 
   if not unitName or unitName == "" then return nil end 
   return ReadData(unitTag, setId, funcName)
@@ -1147,20 +1132,22 @@ end
 --    + player - only the player 
 --    + group..i - specific group member
 
-function LibSetDetection.HasSet( setId, unitTag )
-  return AccessSetManager( unitTag, setId, "HasSet")
+function LibSetDetection.HasSet( setId, unit )
+  setId = ConvertToUnperfected(setId) 
+  return AccessSetManager( unit, setId, "HasSet")
 end
 
-function LibSetDetection.GetActiveSets(unitTag) 
-  return AccessSetManager(unitTag, nil, "GetActiveSets")
+function LibSetDetection.GetActiveSets( unit) 
+  return AccessSetManager(unit, nil, "GetActiveSets")
 end
 
-function LibSetDetection.GetNumEquip(setId, unitTag) 
-  return AccessSetManager(unitTag, setId, "GetNumEquip")  
+function LibSetDetection.GetNumEquip(setId, unit) 
+  setId = ConvertToUnperfected(setId)
+  return AccessSetManager(unit, setId, "GetNumEquip")  
 end
 
-function LibSetDetection.GetEquippedSets(unitTag) 
-  return AccessSetManager(unitTag, nil, "GetEquippedSets")   
+function LibSetDetection.GetEquippedSets(unit) 
+  return AccessSetManager(unit, nil, "GetEquippedSets")   
 end
 
 
@@ -1183,22 +1170,6 @@ function LibSetDetection.GetUnitRawNumEquip() -- return data while still separat
 end
 
 
---- Legacy (only for player) 
-function LibSetDetection.GetEquippedSetsTable() 
-  local PS = PlayerSets
-  local returnTable = {}
-  for setId, _ in pairs( PlayerSets.activeState ) do 
-    local setData = {}
-    setData.name = GetSetName( setId ) 
-    setData.maxEquipped = GetMaxEquip( setId ) 
-    setData.numEquipped = PS.numEquip[setId] 
-    setData.activeBar = PS.activeOnBar[setId]
-    returnTable[setId] = setData 
-  end
-  return returnTable
-end
-
-
 --[[ Exposed Functions of CallbackManager ]]
 
 --- User Input: 
@@ -1211,39 +1182,92 @@ end
 --*action*: 0 = unequip, 1 = equip, 2 = activityChange 
 
 --- "SetChanged" Event
---- Variables provided by Event: 
---    1. changeType (number):  
---    2. setId (number): 
+--- Variables provided by Event:
+--    1. setId (number):  
+--    2. changeType (number):  
 --    3. unitTag (string): "player" or "group"..i  (except group tag that corresponds with player)
 --    4. isActiveOnBody (bool)
 --    5. isActiveOnFront (bool) 
 --    6. isActiveOnBack (bool) 
 
-function LibSetDetection.RegisterForSetChange( ... )
-  return CallbackManager:UpdateRegistry( true, "SetChange", ...)
-end
 
-function LibSetDetection.UnregisterSetChange( ... ) 
-  return CallbackManager:UpdateRegistry( false, "SetChange", ...)
-end
-
-
---- different trigger for player and group 
--- player when slots change (ToDo) 
--- group when number at any bar changes
-function LibSetDetection.RegisterForDataUpdate( ... ) 
-  return CallbackManager:UpdateRegistry( true, "DataUpdate", ...)
-end
-
-function LibSetDetection.UnregisterDataUpdate( ... ) 
-  return CallbackManager:UpdateRegistry( false, "DataUpdate", ...)
+function LibSetDetection:RegisterEvent( eventId, ...)
+  local eventName = eventList[eventId] 
+  return CallbackManager:UpdateRegistry( true, eventName, ...)
 end
 
 
---- Development 
-function LibSetDetection.DecodeCallbackResult( result )   
-  return CallbackManager.resultList[result]
-end 
+function LibSetDetection:UnregisterEvent( eventId, ... ) 
+  local eventName = eventList[eventId] 
+  return CallbackManager:UpdateRegistry( false, eventName, ... )
+
+end
+
+
+--[[ Temporary Backwards Compatibility ]]
+function LibSetDetection.RegisterForSetChanges(uniqueId, callback) 
+  LibSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, "player")
+end
+
+function LibSetDetection.RegisterForSpecificSetChanges(uniqueId, setId, callback)
+  LibsSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, "Player", setId)
+end
+
+function LibSetDetection.RegisterForCustomSlopUpdateEvent(uniqueId, callback) 
+  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, callback, "player") 
+end
+
+function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
+  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, nil, "Player")
+end
+
+
+function LibSetDetection.GetCompleteSetList() 
+  local PS = PlayerSets 
+  local returnTable = {}
+  for setId, complete in pairs( PS.activeState ) do 
+    if complete then 
+      returntable[setId] = GetSetName(setId) 
+    end
+  end
+  return returnTable
+end
+
+
+function LibSetDetection.GetEquipSlotList() 
+  return slotList
+end
+
+
+function LibSetDetection.GetSlotIdSetIdMap() 
+  return PlayerSets.equippedGear
+end
+
+
+function LibSetDetection.GetEquippedSetsTable() 
+  local PS = PlayerSets
+  local returnTable = {}
+  for setId, _ in pairs( PS.activeState ) do 
+    local setData = {}
+    setData.name = GetSetName( setId ) 
+    setData.maxEquipped = GetMaxEquip( setId ) 
+    setData.numEquipped = PS.numEquip[setId] 
+    setData.activeBar = PS.activeOnBar[setId]
+    returnTable[setId] = setData 
+  end
+  return returnTable
+end
+
+
+function LibSetDetection.GetNumSetPiecesForHotbar(setId, hotbar)
+  local barList = {"front", "back", "body"}
+  local PS = PlayerSets 
+  return PS.numEquip[setId][barlist[hotbar]]
+end
+
+
+function LibSetDetection.GetBarActiveSetIdMap()
+end
 
 
 
@@ -1302,8 +1326,18 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d("[LibSetDetection] search string is missing ")
     end
   elseif cmd == "debug" then 
-    libDebug = not libDebug 
-    d( zo_strformat("[LibsetDetection] Debug switched > <<1>> <", libDebug and "on" or "off"))
+    if param[1] == "toggle" then 
+      libDebug = not libDebug 
+      d( zo_strformat("[LibsetDetection] Debug switched > <<1>> <", libDebug and "on" or "off"))
+    else 
+      d("[LibSetDetection - Debug State] "..libDebug)
+      d("BroadcastManager: "..tostring(BroadcastManager.debug))
+      d("CallbackManager: "..tostring(CallbackManager.debug))
+      d("GroupManager: "..tostring(GroupManager.debug))
+      d("SetManager - Player: "..tostring(PlayerSets.debug))
+      d("SetManager - Group: "..tostring(EmptySetManager.debug))
+      d("SlotManager: "..tostring(SlotManager.debug))
+    end
   else 
     if cmd == "dev" and ExoyDev then 
       --- call development functions 
@@ -1314,7 +1348,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
       elseif param[1] == "groupsets" then 
         Development.OutputGroupManager()   
       elseif param[1] == "equipped" then 
-        Development.OutputEquippedSets()      
+        Development.OutputEquippedSets() 
+      elseif param[1] == "test" then 
+        Development.Test()      
       end
     else 
       d("[LibSetDetection] command unknown")
@@ -1327,6 +1363,11 @@ end
 --[[ --------------------------- ]]
 --[[ -- Development Functions -- ]]
 --[[ --------------------------- ]]
+
+function Development.Test() 
+
+end
+
 
 function Development.OutputEquippedSets() 
   d(SlotManager.equippedGear)
