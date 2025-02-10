@@ -1321,9 +1321,15 @@ SLASH_COMMANDS["/lsd"] = function( input )
           d( zo_strformat("<<1>> - <<2>>", i, setName))
         end
       end
-      d("--------------------")
     else 
-      d("[LibSetDetection] search string is missing ")
+      d("[LibSetDetection] incorrect input for setId search")
+    end
+  elseif cmd = "setName" then 
+    local setId = tonumber(param[1])
+    if IsNumber(setId) then 
+      d(zo_strformat("[LibSetDetection] <<1>> (<<2>>)", GetSetName(setId), setId))
+    else 
+      d("[LibSetDetection] incorrect input for setName search")
     end
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
