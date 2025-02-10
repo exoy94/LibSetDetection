@@ -663,7 +663,7 @@ function GroupManager:Initialize()
       self.isGrouped = true
       BroadcastManager:UpdateActivityState()
     else 
-      local unitName = zo_strformat( SI_UNIT_NAME, charName ) 
+      
     end
   end
   local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
@@ -671,8 +671,8 @@ function GroupManager:Initialize()
       self.isGrouped = false 
       BroadcastManager:UpdateActivityState()
     else 
-      local unitName = zo_strformat( SI_UNIT_NAME, charName )   
-        self.groupSets[unitName] = nil  
+      local unitName = ConvertCharToUnitName(charName) 
+      self.groupSets[unitName] = nil  
     end 
   end
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, OnGroupMemberJoined )
@@ -696,21 +696,7 @@ end
 --    >>> only enable data sharing when received at least one response 
 --    >>> activate data share if addon is dormant and and receiving a handshake 
 --    >>> handle change in group composition 
---    >>> send information if settings change 
---- dormant, sleep, wake up 
-
---- information about a group member 
---[[ 
-  ["charName"] as key 
-    for each setId = {numEq, fb, bb}  
-]]
-  -- function to convert between received data and save array 
-  -- function to check, if something changeed before sending data
-  -- function to convert player data to send data 
-  -- api for information about group 
-
-
-
+--    >>> send information if settings change
 
 --[[ -------------- ]]
 --[[ -- Data Msg -- ]]
@@ -798,14 +784,16 @@ function DataMsg:DeserilizeData( rawData )
   end
   if rawData.requestSync then 
     --- send message with current setup 
+    BroadcastManager.synchronized = true
   end 
   return data
 end
 
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
+  --GetLocalPlayerGroupUnitTag() 
   local unitName = GetUnitName(unitTag)
-  --local data = self:DeserilizeData(rawData.SetData)
+  local data = self:DeserilizeData(rawData.SetData)
   if ExoyDev then 
     d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
     d(rawData)
@@ -813,7 +801,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
     d(self:DeserilizeData( rawData) )
   end
   if unitName == playerName then 
-    --- verification, that my message was send
+
   else 
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
@@ -821,7 +809,8 @@ end
 
 
 function DataMsg:SendData( numEquip ) 
-  local data = self:SerilizeData( numEquip, false ) 
+  local requestSync ~= BroadcastManager.synchronized
+  local data = self:SerilizeData( numEquip, request ) 
   d("formatted data for sending")
   d(data)
   self.handler:Send( data ) 
@@ -905,24 +894,44 @@ end
 
 
 function BroadcastManager:UpdateActivityState()
-  self.active = GroupManager.isGrouped
+  local function GetBool( var ) 
+    return var and true or false
+  end
+
+  if libDebug and self.debug then debugMsg("BM", "activity state update ("..tostring(self.active)..")")  end
+  local previousState = self.active
+  local updatedState = false 
+
+  --- true setter (or arguments) 
+  -- state is set to true, if any of the following conditions is not met
+  if libDebug and self.debug then d("--- true setter ---") end
+  if libDebug and self.debug then d("is grouped: "..tostring(GroupManager.isGrouped)) end
+  updatedState = updatedState or GroupManager.isGrouped
+
+  --- false setter (and arguments) 
+  -- state is set to false, if any of the following conditions is not met
+  if libDebug and self.debug then d("--- false setter ---") end
+  if libDebug and self.debug then d("is LibGroupBroadcast: "..tostring( GetBool(LibGroupBroadcast) ) ) end
+  updateState = updateState and GetBool(LibGroupBroadcast) 
+
+  if libDebug and self.debug then d("updated state: "..tostring(updatedState) ) end
+  self.active = updatedState
 end 
 
+
 function BroadcastManager:SendData(numEquip) 
-  --if not self.active then return end 
-  --d("internal")
-  --d(self.DataMsg.internalId) 
-  --d("external") 
-  --d(self.DataMsg.externalId)
-  --d("----")
-  --d(self.DataMsg.internalId[12])
-  ---self.DataMsg:SendData(numEquip)
+  if self.dormant then return end
+  self.DataMsg:SendData(numEquip)
   self.synchronized = true
 end
 
+
 function BroadcastManager:Initialize() 
-  if not LibGroupBroadcast then return end
-  self:UpdateActivityState()
+  if not LibGroupBroadcast then 
+    self.dormant = true
+    return 
+  end
+  self.debug = true
   self.synchronized = false 
   self.DataMsg = DataMsg:Initialize( self.debug ) 
 end
@@ -1015,6 +1024,7 @@ function SlotManager:SendData() ---rename
     ExtendNumEquipData( numEquip ),   
     self.equippedGear ) 
 end
+
 
 --[[ %%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ---------------- %% ]]
@@ -1149,7 +1159,6 @@ end
 function LibSetDetection.GetEquippedSets(unit) 
   return AccessSetManager(unit, nil, "GetEquippedSets")   
 end
-
 
 --- Utility
 function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
