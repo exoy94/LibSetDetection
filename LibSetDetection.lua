@@ -791,7 +791,8 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   local unitName = GetUnitName(unitTag)
   d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
   d(rawData)
-  local data = self:DeserilizeData(rawData)
+  local data = self:DeserilizeData(rawData
+)
   if ExoyDev then 
     d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
     d(rawData)
@@ -1337,7 +1338,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     if IsNumber(setId) then  
       local setName = GetSetName(setId) 
       if setName == "" then 
-        d(zo_strformat("[LibSetDetection] no set found for id=<<1>>", setId))
+        d(zo_strformat("[LibSetDetection] no set name found for id=<<1>>", setId))
       else 
         d(zo_strformat("[LibSetDetection] <<1>> (<<2>>)", GetSetName(setId), setId))
       end
