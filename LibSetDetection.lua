@@ -789,7 +789,9 @@ end
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   --GetLocalPlayerGroupUnitTag() 
   local unitName = GetUnitName(unitTag)
-  local data = self:DeserilizeData(rawData.SetData)
+  d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
+  d(rawData)
+  local data = self:DeserilizeData(rawData)
   if ExoyDev then 
     d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
     d(rawData)
@@ -806,7 +808,7 @@ end
 
 function DataMsg:SendData( numEquip ) 
   local requestSync = not BroadcastManager.synchronized
-  local data = self:SerilizeData( numEquip, request ) 
+  local data = self:SerilizeData( numEquip, requestSync ) 
   d("formatted data for sending")
   d(data)
   self.protocol:Send( data ) 
