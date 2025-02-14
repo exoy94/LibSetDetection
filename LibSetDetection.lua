@@ -1231,29 +1231,29 @@ function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
 end
 
 
-function LibSetDetection.GetCompleteSetList() 
+function LibSetDetection.GetCompleteSetsList() ---checked
   local PS = PlayerSets 
   local returnTable = {}
   for setId, complete in pairs( PS.activeState ) do 
     if complete then 
-      returntable[setId] = GetSetName(setId) 
+      returnTable[setId] = GetSetName(setId) 
     end
   end
   return returnTable
 end
 
 
-function LibSetDetection.GetEquipSlotList() 
+function LibSetDetection.GetEquipSlotList() ---checked
   return slotList
 end
 
 
-function LibSetDetection.GetSlotIdSetIdMap() 
-  return PlayerSets.equippedGear
+function LibSetDetection.GetSlotIdSetIdMap() ---checked
+  return SlotManager.equippedGear
 end
 
 
-function LibSetDetection.GetEquippedSetsTable() 
+function LibSetDetection.GetEquippedSetsTable() ---checked
   local PS = PlayerSets
   local returnTable = {}
   for setId, _ in pairs( PS.activeState ) do 
@@ -1268,10 +1268,10 @@ function LibSetDetection.GetEquippedSetsTable()
 end
 
 
-function LibSetDetection.GetNumSetPiecesForHotbar(setId, hotbar)
+function LibSetDetection.GetNumSetPiecesForHotbar(setId, slotCategory)
   local barList = {"front", "back", "body"}
   local PS = PlayerSets 
-  return PS.numEquip[setId][barlist[hotbar]]
+  return PS.numEquip[setId][barlist[slotCategory]]
 end
 
 
