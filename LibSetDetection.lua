@@ -84,9 +84,9 @@ end
 --[[ -- Global Variables -- ]]
 --[[ ---------------------- ]]
  
-LSD_CHANGE_TYPE_UNEQUIPPED = 1 
-LSD_CHANGE_TYPE_EQUIPPED = 2
-LSD_CHANGE_TYPE_UPDATE = 3
+LSD_CHANGE_TYPE_ACTIVATED = 1
+LSD_CHANGE_TYPE_DEACTIVATED = 2 
+LSD_CHANGE_TYPE_UPDATED = 3 
 
 LSD_UNIT_TYPE_PLAYER = 1 
 LSD_UNIT_TYPE_GROUP = 2
@@ -174,9 +174,9 @@ local unitTypeList = {
 }
 
 local changeTypeList = {
-  [LSD_CHANGE_TYPE_UNEQUIPPED] = "unequipped", 
-  [LSD_CHANGE_TYPE_EQUIPPED] = "equipped", 
-  [LSD_CHANGE_TYPE_UPDATE] = "update",
+  [LSD_CHANGE_TYPE_ACTIVATED] = "activated", 
+  [LSD_CHANGE_TYPE_DEACTIVATED] = "deactivated", 
+  [LSD_CHANGE_TYPE_UPDATED] = "update",
 }
 
 
@@ -389,7 +389,7 @@ function CallbackManager:FireCallbacks( eventType, unitType, setId, ... )
     _FireCallbacks( self.registry[registryName],... )
 
   elseif eventType == "SetChange" then 
-    -- changeType, unperfSetId, unitTag, isActiveOnBody, isActiveOnFront, isActiveOnBack
+    -- setId, changeType, unitTag, isActiveOnBody, isActiveOnFront, isActiveOnBack
     if libDebug and self.debug then --debug for "SetChange Event"
       local p = {...}
       local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], changeTypeList[p[1]], p[1] ) 
@@ -544,19 +544,19 @@ function SetManager:DetermineChanges()
       if self.archive.activeState[setId] then   -- if they were aleady active
         for _, category in pairs (slotCategories) do    -- check if active for each individual bar
           if self.archive.activeOnBar[setId][category] ~= self.activeOnBar[setId][category] then 
-            changeList[setId] = LSD_CHANGE_TYPE_UPDATE  -- if at least one bar has changed --> updated
+            changeList[setId] = LSD_CHANGE_TYPE_UPDATED  -- if at least one bar has changed --> updated
             break
           end
         end
       else   -- and weren't active before -> equipped
-        changeList[setId] = LSD_CHANGE_TYPE_EQUIPPED
+        changeList[setId] = LSD_CHANGE_TYPE_ACTIVATED
       end
     end
   end
   -- check, if all previously active sets are still active, otherwise -> unequipped
   for setId, archiveActiveState in pairs( self.archive.activeState ) do 
     if archiveActiveState and not self.activeState[setId] then 
-      changeList[setId] = LSD_CHANGE_TYPE_UNEQUIPPED
+      changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED
     end
   end
   if libDebug and self.debug then 
@@ -590,7 +590,7 @@ function SetManager:FireCallbacks( changeList )
     local activeOnFront = false
     local activeOnBack = false 
     -- update activeOnBar bools for existing sets
-    if changeType == LSD_CHANGE_TYPE_EQUIPPED or changeType == LSD_CHANGE_TYPE_UPDATE then 
+    if changeType == LSD_CHANGE_TYPE_ACTIVATED or changeType == LSD_CHANGE_TYPE_UPDATED then 
       activeOnBody = self.activeOnBar[setId]["body"]
       activeOnFront = self.activeOnBar[setId]["front"]
       activeOnBack =  self.activeOnBar[setId]["back"]
