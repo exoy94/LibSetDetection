@@ -96,8 +96,6 @@ LSD_UNIT_TYPE_GROUP_MEMBER = 4
 LSD_EVENT_SET_CHANGE = 1 
 LSD_EVENT_DATA_UPDATE = 2
 
-
-
 --[[ --------------------- ]]
 --[[ -- Local Variables -- ]]
 --[[ --------------------- ]]
@@ -173,7 +171,12 @@ local unitTypeList = {
   [LSD_UNIT_TYPE_PLAYER] = "player", 
   [LSD_UNIT_TYPE_GROUP] = "group", 
   [LSD_UNIT_TYPE_ALL] = "all", 
-  [LSD_UNIT_TYPE_GROUP_MEMBER] = "member",
+}
+
+local changeTypeList = {
+  [LSD_CHANGE_TYPE_UNEQUIPPED] = "unequipped", 
+  [LSD_CHANGE_TYPE_EQUIPPED] = "equipped", 
+  [LSD_CHANGE_TYPE_UPDATE] = "update",
 }
 
 
@@ -245,17 +248,13 @@ local function ExtendNumEquipData( numEquip )
   return numEquipExtended
 end
 
+
 --[[ ----------- ]]
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
 local function debugMsg(id, msg) 
   d( zo_strformat("[<<1>> LSD - <<2>>] <<3>>", GetTimeString(), id, msg) )  
-end
-
-local function DecodeChangeType( changeType ) 
-  local changeStr = {"unequipped", "equipped", "updated"}
-  return changeStr[changeType]
 end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -393,7 +392,7 @@ function CallbackManager:FireCallbacks( eventType, unitType, setId, ... )
     -- changeType, unperfSetId, unitTag, isActiveOnBody, isActiveOnFront, isActiveOnBack
     if libDebug and self.debug then --debug for "SetChange Event"
       local p = {...}
-      local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], DecodeChangeType(p[1]), p[1] ) 
+      local msgStart = zo_strformat( "<<1>> for <<2>>: <<3>> (<<4>>) ", eventType, p[3], changeTypeList[p[1]], p[1] ) 
       local msgEnd = zo_strformat("<<1>> (<<2>>) - {<<3>>, <<4>>, <<5>>}", 
         GetSetName( p[2] ), p[2], p[4] and 1 or 0, p[5] and 1 or 0, p[6] and 1 or 0 )
         debugMsg("CM", msgStart..msgEnd )
@@ -574,7 +573,7 @@ function SetManager:DetermineChanges()
     d("changeList") 
     local changeListDecoded = {}
     for setId, changeType in pairs(changeList) do 
-      changeListDecoded[setId] = DecodeChangeType(changeType)
+      changeListDecoded[setId] = changeTypeList[changeType]
     end
     d(changeListDecoded)
     d("------------ End of changeList")
