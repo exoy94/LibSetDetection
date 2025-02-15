@@ -88,6 +88,11 @@ LSD_CHANGE_TYPE_UNEQUIPPED = 1
 LSD_CHANGE_TYPE_EQUIPPED = 2
 LSD_CHANGE_TYPE_UPDATE = 3
 
+LSD_UNIT_TYPE_PLAYER = 1 
+LSD_UNIT_TYPE_GROUP = 2
+LSD_UNIT_TYPE_ALL = 3
+LSD_UNIT_TYPE_GROUP_MEMBER = 4
+
 LSD_EVENT_SET_CHANGE = 1 
 LSD_EVENT_DATA_UPDATE = 2
 
@@ -145,25 +150,32 @@ local exceptionList = {
 
 
 --- result code definition for callback manager
-local CALLBACK_RESULT_SUCCESS = 0 
-local CALLBACK_RESULT_INVALID_CALLBACK = 1 
-local CALLBACK_RESULT_INVALID_UNITTYPE = 2 
-local CALLBACK_RESULT_INVALID_FILTER = 3
-local CALLBACK_RESULT_INVALID_NAME = 4 
-local CALLBACK_RESULT_DUPLICATE_NAME = 5
-local CALLBACK_RESULT_UNKNOWN_NAME = 6
-
+local REGISTRY_RESULT_SUCCESS = 0 
+local REGISTRY_RESULT_INVALID_EVENT = 1
+local REGISTRY_RESULT_INVALID_CALLBACK = 2 
+local REGISTRY_RESULT_INVALID_UNIT_TYPE = 3 
+local REGISTRY_RESULT_INVALID_FILTER = 4
+local REGISTRY_RESULT_INVALID_NAME = 5
+local REGISTRY_RESULT_DUPLICATE_NAME = 6
+local REGISTRY_RESULT_UNKNOWN_NAME = 7
 
 local SET_TYPE_NORMAL = 0 
 local SET_TYPE_MYSTICAL = 1 
 local SET_TYPE_UNDAUNTED = 2 
 local SET_TYPE_WEAPON = 3
 
-
 local eventList = {
   [LSD_EVENT_SET_CHANGE] = "SetChange", 
   [LSD_EVENT_DATA_UPDATE] = "DataUpdate",
 }
+
+local unitTypeList = {
+  [LSD_UNIT_TYPE_PLAYER] = "player", 
+  [LSD_UNIT_TYPE_GROUP] = "group", 
+  [LSD_UNIT_TYPE_ALL] = "all", 
+  [LSD_UNIT_TYPE_GROUP_MEMBER] = "member",
+}
+
 
 --[[ -------------------------------- ]]
 --[[ -- Specific Utility Functions -- ]]
@@ -269,23 +281,28 @@ function CallbackManager:Initialize()
 end
 
 
-function CallbackManager:UpdateRegistry(action, registryType, uniqueId, callback, unitType, filter)
-
-  if unitType == "all" or not unitType then   -- if unitType is nil or "all" execute function for "player" and "group"
-    local resultPlayer = self:UpdateRegistry(action, registryType, uniqueId, callback, "player", filterTable)
-    local resultGroup = self:UpdateRegistry(action, registryType, uniqueId, callback, "group", filterTable)
+function CallbackManager:UpdateRegistry(action, eventId, uniqueId, callback, unitType, filter)
+  
+  if unitType == LSD_UNIT_TYPE_ALL then   -- if unitType is nil or "all" execute function for "player" and "group"
+    local resultPlayer = self:UpdateRegistry(action, eventId, uniqueId, callback, LSD_UNIT_TYPE_PLAYER, filter)
+    local resultGroup = self:UpdateRegistry(action, eventId, uniqueId, callback, LSD_UNIT_TYPE_GROUP, filter)
     return resultPlayer, resultGroup
   end
-  --- verify general user inputs
-  if not IsString(uniqueId) then return CALLBACK_RESULT_INVALID_NAME end 
-  if not unitType == "player" or unitType == "group" then return CALLBACK_RESULT_INVALID_UNITTYPE end 
-  --- set change registry
-  local registryName = unitType..registryType
-  if registryType == "SetChange" then 
+
+  local registryType = eventList[eventId] 
+  local unitTypeStr = unitTypeList[unitType]
+
+  if not IsString(uniqueId) then return REGISTRY_RESULT_INVALID_NAME end
+  if not registryName then REGISTRY_RESULT_INVALID_EVENT end
+  if not unitTypeStr then REGISTRY_RESULT_INVALID_UNIT_TYPE end
+
+    --- set change registry
+  local registryName = unitTypeStr..registryType
+  if eventId == LSD_EVENT_SET_CHANGE then 
     return self:UpdateSetChangeRegistry( action, registryName, uniqueId, callback, filter ) 
   end 
   --- data update registry
-  if registryType == "DataUpdate" then 
+  if eventId == LSD_EVENT_DATA_UPDATE then 
     return self:UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
   end
 end   -- End of "UpdateRegistry"
@@ -305,7 +322,7 @@ function CallbackManager:UpdateSetChangeRegistry( action, registryName, uniqueId
     end
     return false 
   end
-  if not IsValidSetChangeFilter() then return CALLBACK_RESULT_INVALID_FILTER end 
+  if not IsValidSetChangeFilter() then return REGISTRY_RESULT_INVALID_FILTER end 
   --- format filter  
   filter = filter or {0}    -- events with no filter will be mapped to an arbitrary filter Id of 0 
   if IsNumber(filter) then filter = {filter} end      -- this makes subsequent code easier and clearer
@@ -317,37 +334,37 @@ function CallbackManager:UpdateSetChangeRegistry( action, registryName, uniqueId
     self.registry[registryName][filterId] = self.registry[registryName][filterId] or {}
     local callbackList = self.registry[registryName][filterId]
     if action then    -- registration
-      if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+      if callbackList[uniqueId] then return REGISTRY_RESULT_DUPLICATE_NAME end
       if IsFunction(callback) then 
         if self.debug then d(zo_strformat("Reigster '<<1>>' in <<2>> (<<3>>)", uniqueId, registryName, filterId)) end
         callbackList[uniqueId] = callback 
       else 
-        return CALLBACK_RESULT_INVALID_CALLBACK 
+        return REGISTRY_RESULT_INVALID_CALLBACK 
       end
     else  -- unregistration
-      if not callbackList[uniqueId] then return CALLBACK_RESULT_UNKNOWN_NAME end 
+      if not callbackList[uniqueId] then return REGISTRY_RESULT_UNKNOWN_NAME end 
       callbackList[uniqueId] = nil
     end 
   end
-  return CALLBACK_RESULT_SUCCESS
+  return REGISTRY_RESULT_SUCCESS
 end   -- End of "UpdateSetChangeRegistry"
 
 
 function CallbackManager:UpdateDataUpdateRegistry( action, registryName, uniqueId, callback, filter ) 
   --- validate filter
-  if filter then return CALLBACK_RESULT_INVALID_FILTER end 
+  if filter then return REGISTRY_RESULT_INVALID_FILTER end 
   --- update registry
   local callbackList = self.registry[registryName] 
   if action then -- registration
-    if callbackList[uniqueId] then return CALLBACK_RESULT_DUPLICATE_NAME end
+    if callbackList[uniqueId] then return REGISTRY_RESULT_DUPLICATE_NAME end
     if IsFunction(callback) then 
       callbackList[uniqueId] = callback 
     else 
-      return CALLBACK_RESULT_INVALID_CALLBACK 
+      return REGISTRY_RESULT_INVALID_CALLBACK 
     end
     callbackList[uniqueId] = callback 
   else -- unregistration
-    if not callbackList[uniqueId] then return CALLBACK_RESULT_UNKNOWN_NAME end 
+    if not callbackList[uniqueId] then return REGISTRY_RESULT_UNKNOWN_NAME end 
     callbackList[uniqueId] = nil
   end
 end   -- UpdateDataUpdateRegistry
@@ -1090,29 +1107,30 @@ EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 --[[ %%%%%%%%%%%%%%%%%%%%% ]]
 
 
-local function ReadData( unitTag, setId, funcName ) 
+local function ReadData(api, setId, unitTag) 
   local SM
   if unitTag == "player" then 
     SM = PlayerSets
   else 
     SM = GroupManager:GetSetManager( unitTag ) 
   end
-  return SM[funcName](SM, setId)
+  return SM[api](SM, setId)
 end
 
 
-local function AccessSetManager(unitType, setId, funcName)
-  unitType = unitType or "player"
-  if unitType == "all" then 
-    local playerData = {ReadData("player", setId, funcName)}
-    local groupData  = {AccessSetManager("group", setId, funcName)}
+local function AccessSetManager(api, setId, unitType, groupTag)
+
+  unitType = unitType or LSD_UNIT_TYPE_PLAYER
+  if unitType == LSD_UNIT_TYPE_ALL then 
+    local playerData = {ReadData(api, setId, "player")}
+    local groupData  = {AccessSetManager(api, setId, LSD_UNIT_TYPE_GROUP)}
     local combinedData = groupData  
     combinedData.player = playerData 
     return combinedData
   end
-  if unitType == "group" then 
-    local groupData = {} 
-    local groupResult = {}
+
+  if unitType == LSD_UNIT_TYPE_GROUP then 
+    local groupData = {}
     for ii=1,GetGroupSize() do 
       local unitTag = GetGroupUnitTagByIndex( ii ) 
       if IsUnitPlayer(unitTag) then 
@@ -1121,11 +1139,20 @@ local function AccessSetManager(unitType, setId, funcName)
     end
     return groupData
   end 
-  -- validate unitTag by checken for name of corresponding unit
-  local unitTag = unitType
+
+  local unitTag
+  if unitType == LSD_UNIT_TYPE_PLAYER then 
+    unitTag = "player" 
+  elseif unitType == LSD_UNIT_TYPE_GROUP_MEMBER then 
+    unitTag = groupTag
+  end
+  
+  if not IsUnitPlayer(unitTag) then return end
+  -- validate unitTag by checking for name of corresponding unit
   local unitName = GetUnitName(unitTag) 
-  if not unitName or unitName == "" then return nil end 
-  return ReadData(unitTag, setId, funcName)
+  if not unitName or unitName == "" then return nil end
+  
+  return ReadData(api, setId, unitTag)
 end
 
 
@@ -1142,22 +1169,22 @@ end
 --    + player - only the player 
 --    + group..i - specific group member
 
-function LibSetDetection.HasSet( setId, unit )
+function LibSetDetection.HasSet( setId, unitType, groupTag )
   setId = ConvertToUnperfected(setId) 
-  return AccessSetManager( unit, setId, "HasSet")
+  return AccessSetManager( "HasSet", setId, unitType, groupTag)
 end
 
-function LibSetDetection.GetActiveSets( unit) 
-  return AccessSetManager(unit, nil, "GetActiveSets")
+function LibSetDetection.GetActiveSets( unitType, groupTag) 
+  return AccessSetManager("GetActiveSets", nil, unitType, groupTag)
 end
 
-function LibSetDetection.GetNumEquip(setId, unit) 
+function LibSetDetection.GetNumEquip(setId, unitType, groupTag) 
   setId = ConvertToUnperfected(setId)
-  return AccessSetManager(unit, setId, "GetNumEquip")  
+  return AccessSetManager("GetNumEquip", setId, unitType, groupTag )  
 end
 
-function LibSetDetection.GetEquippedSets(unit) 
-  return AccessSetManager(unit, nil, "GetEquippedSets")   
+function LibSetDetection.GetEquippedSets(unitType, groupTag) 
+  return AccessSetManager("GetEquippedSets", nil, unitType, groupTag)   
 end
 
 --- Utility
@@ -1184,7 +1211,7 @@ end
 --- User Input: 
 --    1. id (string - case sensitive): unique name (for each registryType/unitType) 
 --    2. callback (function): called when appropriate callbacks fire
---    3. unitType:nilable (string - case sensitive): "player" or "group" or "all" (nil = "all") 
+--    3. unitType (number): "player" or "group" or "all" (nil = "all") 
 --    4. filter:nilable (optional for "SetChange") - table of filter values (setId), for registration or unregistration  
 
 --EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
@@ -1198,36 +1225,34 @@ end
 --    4. isActiveOnBody (bool)
 --    5. isActiveOnFront (bool) 
 --    6. isActiveOnBack (bool) 
+--    7. hasException
 
 
-function LibSetDetection:RegisterEvent( eventId, ...)
-  local eventName = eventList[eventId] 
-  return CallbackManager:UpdateRegistry( true, eventName, ...)
+function LibSetDetection:RegisterEvent( eventId, ... )
+  return CallbackManager:UpdateRegistry( true, eventId, ...)
 end
 
 
 function LibSetDetection:UnregisterEvent( eventId, ... ) 
-  local eventName = eventList[eventId] 
-  return CallbackManager:UpdateRegistry( false, eventName, ... )
-
+  return CallbackManager:UpdateRegistry( false, eventId, ... )
 end
 
 
 --[[ Temporary Backwards Compatibility ]]
 function LibSetDetection.RegisterForSetChanges(uniqueId, callback) 
-  LibSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, "player")
+  LibSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER)
 end
 
 function LibSetDetection.RegisterForSpecificSetChanges(uniqueId, setId, callback)
-  LibsSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, "Player", setId)
+  LibsSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER, setId)
 end
 
 function LibSetDetection.RegisterForCustomSlopUpdateEvent(uniqueId, callback) 
-  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, callback, "player") 
+  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER) 
 end
 
 function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
-  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, nil, "Player")
+  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, nil, LSD_UNIT_TYPE_PLAYER)
 end
 
 
