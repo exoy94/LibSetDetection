@@ -740,10 +740,6 @@ end
 
 
 function DataMsg:SerilizeData( numEquipData, requestSync ) 
-  d("Serilizing data")
-  d(self:ExternalToInternalId("mystical", 693))
-  d(self.internalId["mystical"])
-  d("---")
   local formattedData = { 
     ["requestSync"] = requestSync, 
     ["mystical"] = 0, 
@@ -810,7 +806,10 @@ end
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   --GetLocalPlayerGroupUnitTag() 
   local unitName = GetUnitName(unitTag)
-  local data = self:DeserilizeData(rawData.SetData)
+  d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
+  d(rawData)
+  local data = self:DeserilizeData(rawData
+)
   if ExoyDev then 
     d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
     d(rawData)
@@ -826,11 +825,11 @@ end
 
 
 function DataMsg:SendData( numEquip ) 
-  local requestSync ~= BroadcastManager.synchronized
-  local data = self:SerilizeData( numEquip, request ) 
+  local requestSync = not BroadcastManager.synchronized
+  local data = self:SerilizeData( numEquip, requestSync ) 
   d("formatted data for sending")
   d(data)
-  self.handler:Send( data ) 
+  self.protocol:Send( data ) 
 end
 
 
@@ -950,6 +949,7 @@ function BroadcastManager:Initialize()
   end
   self.debug = true
   self.synchronized = false 
+  BroadcastManager:UpdateActivityState()
   self.DataMsg = DataMsg:Initialize( self.debug ) 
 end
 
@@ -1073,8 +1073,8 @@ local function Initialize()
   libDebug = ExoyDev and true or libDebug 
 
   CallbackManager:Initialize()
-  BroadcastManager:Initialize() 
   GroupManager:Initialize()
+  BroadcastManager:Initialize() 
   SlotManager:Initialize() 
 
   PlayerSets = SetManager:New("player") 
@@ -1256,29 +1256,29 @@ function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
 end
 
 
-function LibSetDetection.GetCompleteSetList() 
+function LibSetDetection.GetCompleteSetsList() ---checked
   local PS = PlayerSets 
   local returnTable = {}
   for setId, complete in pairs( PS.activeState ) do 
     if complete then 
-      returntable[setId] = GetSetName(setId) 
+      returnTable[setId] = GetSetName(setId) 
     end
   end
   return returnTable
 end
 
 
-function LibSetDetection.GetEquipSlotList() 
+function LibSetDetection.GetEquipSlotList() ---checked
   return slotList
 end
 
 
-function LibSetDetection.GetSlotIdSetIdMap() 
-  return PlayerSets.equippedGear
+function LibSetDetection.GetSlotIdSetIdMap() ---checked
+  return SlotManager.equippedGear
 end
 
 
-function LibSetDetection.GetEquippedSetsTable() 
+function LibSetDetection.GetEquippedSetsTable() ---checked
   local PS = PlayerSets
   local returnTable = {}
   for setId, _ in pairs( PS.activeState ) do 
@@ -1293,10 +1293,10 @@ function LibSetDetection.GetEquippedSetsTable()
 end
 
 
-function LibSetDetection.GetNumSetPiecesForHotbar(setId, hotbar)
+function LibSetDetection.GetNumSetPiecesForHotbar(setId, slotCategory)
   local barList = {"front", "back", "body"}
   local PS = PlayerSets 
-  return PS.numEquip[setId][barlist[hotbar]]
+  return PS.numEquip[setId][barlist[slotCategory]]
 end
 
 
@@ -1358,10 +1358,15 @@ SLASH_COMMANDS["/lsd"] = function( input )
     else 
       d("[LibSetDetection] incorrect input for setId search")
     end
-  elseif cmd = "setName" then 
+  elseif cmd == "setname" then 
     local setId = tonumber(param[1])
-    if IsNumber(setId) then 
-      d(zo_strformat("[LibSetDetection] <<1>> (<<2>>)", GetSetName(setId), setId))
+    if IsNumber(setId) then  
+      local setName = GetSetName(setId) 
+      if setName == "" then 
+        d(zo_strformat("[LibSetDetection] no set name found for id=<<1>>", setId))
+      else 
+        d(zo_strformat("[LibSetDetection] <<1>> (<<2>>)", GetSetName(setId), setId))
+      end
     else 
       d("[LibSetDetection] incorrect input for setName search")
     end
@@ -1370,7 +1375,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       libDebug = not libDebug 
       d( zo_strformat("[LibsetDetection] Debug switched > <<1>> <", libDebug and "on" or "off"))
     else 
-      d("[LibSetDetection - Debug State] "..libDebug)
+      d("[LibSetDetection - Debug] lib: "..tostring(libDebug))
       d("BroadcastManager: "..tostring(BroadcastManager.debug))
       d("CallbackManager: "..tostring(CallbackManager.debug))
       d("GroupManager: "..tostring(GroupManager.debug))
@@ -1385,6 +1390,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
       --Development.OutputPlayerSets()    
       if param[1] == "registry" then 
         Development.OutputRegistry()
+      elseif param[1] == "active" then 
+        BroadcastManager:UpdateActivityState()    
       elseif param[1] == "groupsets" then 
         Development.OutputGroupManager()   
       elseif param[1] == "equipped" then 
@@ -1405,6 +1412,27 @@ end
 --[[ --------------------------- ]]
 
 function Development.Test() 
+  -- test to check buffer overflow
+  local LGB = LibGroupBroadcast
+  local test = {}
+  test.handler = LGB:RegisterHandler("LibSetDetection_Test")
+  test.protocol = test.handler:DeclareProtocol(511, "SetData_Test")
+  local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
+      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
+      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
+      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
+    }), { minLength = 0, maxLength = 50 } )
+    test.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
+    test.protocol:OnData( function(...) d("receiveTestMsg") end )  
+    test.protocol:Finalize()
+
+  local data = {} 
+  for ii = 1,50 do 
+    table.insert(data, {["id"] = ii, ["body"] = 5, ["front"] = 1, ["back"] = 2 })
+  end
+
+  test.protocol:Send( {["NormalSets"] = data} )
 
 end
 
