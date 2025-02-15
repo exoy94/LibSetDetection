@@ -84,9 +84,9 @@ end
 --[[ -- Global Variables -- ]]
 --[[ ---------------------- ]]
  
-LSD_CHANGE_TYPE_UNEQUIPPED = 1 
-LSD_CHANGE_TYPE_EQUIPPED = 2
-LSD_CHANGE_TYPE_UPDATE = 3
+LSD_CHANGE_TYPE_DEACTIVATED = 0 ---DEACTIVATED
+LSD_CHANGE_TYPE_ACTIVATED = 1 
+LSD_CHANGE_TYPE_UPDATE = 2
 
 LSD_UNIT_TYPE_PLAYER = 1 
 LSD_UNIT_TYPE_GROUP = 2
@@ -174,8 +174,8 @@ local unitTypeList = {
 }
 
 local changeTypeList = {
-  [LSD_CHANGE_TYPE_UNEQUIPPED] = "unequipped", 
-  [LSD_CHANGE_TYPE_EQUIPPED] = "equipped", 
+  [LSD_CHANGE_TYPE_DEACTIVATED] = "unequipped", 
+  [LSD_CHANGE_TYPE_ACTIVATED] = "activated", 
   [LSD_CHANGE_TYPE_UPDATE] = "update",
 }
 
@@ -292,8 +292,8 @@ function CallbackManager:UpdateRegistry(action, eventId, uniqueId, callback, uni
   local unitTypeStr = unitTypeList[unitType]
 
   if not IsString(uniqueId) then return REGISTRY_RESULT_INVALID_NAME end
-  if not registryName then REGISTRY_RESULT_INVALID_EVENT end
-  if not unitTypeStr then REGISTRY_RESULT_INVALID_UNIT_TYPE end
+  if not registryName then return REGISTRY_RESULT_INVALID_EVENT end
+  if not unitTypeStr then return REGISTRY_RESULT_INVALID_UNIT_TYPE end
 
     --- set change registry
   local registryName = unitTypeStr..registryType
@@ -413,19 +413,21 @@ end
 SetManager.__index = SetManager 
 
 function SetManager:New( unitType )
+  local SM = setmetatable({}, SetManager) 
+  --local SM = ZO_DeepTableCopy(SetManager) 
   -- unitType ("player" or "group")
   -- unitTag at the time of creation
   if unitType == "player" then 
-    self.debug = false   --- entity debug toogle
+    SM.debug = false   --- entity debug toogle
   end
   if unitType == "group" then 
-    self.debug = false     --- entity debug toogle
+    SM.debug = false     --- entity debug toogle
   end
-  self.unitType = unitType or "empty"
-  self.numEquip = {} 
-  self.activeOnBar = {}
-  self.activeState = {}
-  return self
+  SM.unitType = unitType or "empty"
+  SM.numEquip = {} 
+  SM.activeOnBar = {}
+  SM.activeState = {}
+  return SM
 end
 
 
@@ -549,14 +551,14 @@ function SetManager:DetermineChanges()
           end
         end
       else   -- and weren't active before -> equipped
-        changeList[setId] = LSD_CHANGE_TYPE_EQUIPPED
+        changeList[setId] = LSD_CHANGE_TYPE_ACTIVATED
       end
     end
   end
   -- check, if all previously active sets are still active, otherwise -> unequipped
   for setId, archiveActiveState in pairs( self.archive.activeState ) do 
     if archiveActiveState and not self.activeState[setId] then 
-      changeList[setId] = LSD_CHANGE_TYPE_UNEQUIPPED
+      changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED
     end
   end
   if libDebug and self.debug then 
@@ -590,7 +592,7 @@ function SetManager:FireCallbacks( changeList )
     local activeOnFront = false
     local activeOnBack = false 
     -- update activeOnBar bools for existing sets
-    if changeType == LSD_CHANGE_TYPE_EQUIPPED or changeType == LSD_CHANGE_TYPE_UPDATE then 
+    if changeType == LSD_CHANGE_TYPE_ACTIVATED or changeType == LSD_CHANGE_TYPE_UPDATE then 
       activeOnBody = self.activeOnBar[setId]["body"]
       activeOnFront = self.activeOnBar[setId]["front"]
       activeOnBack =  self.activeOnBar[setId]["back"]
@@ -603,21 +605,22 @@ end
 
 function SetManager:HasSet(setId) 
   local _activeState = self.activeState[setId] or false 
-  local _activeOnBody = self.activeOnBar[setId] and self.activeOnBar["body"] or false 
-  local _activeOnFront = self.activeOnBar[setId] and self.activeOnBar["front"] or false 
-  local _activeOnBack = self.activeOnBar[setId] and self.activeOnBar["back"] or false 
+  local _activeOnBody = self.activeOnBar[setId] and self.activeOnBar[setId]["body"] or false 
+  local _activeOnFront = self.activeOnBar[setId] and self.activeOnBar[setId]["front"] or false 
+  local _activeOnBack = self.activeOnBar[setId] and self.activeOnBar[setId]["back"] or false 
   return _activeState, _activeOnBody, _activeOnFront, _activeOnBack
 end 
 
 
 function SetManager:GetActiveSets() 
   local _stateList = {}
-  local _onBarList = Template_SlotCategorySubtables{"table"}
+  local _onBarList = Template_SlotCategorySubtables("table")
   for setId, activeState in pairs( self.activeState ) do 
-    if activeState then table.insert(_stateList, setId) end
-    for _, category in pairs(slotCategories) do 
-      if self.activeOnBar[setId][category] then 
-        table.insert(_onBarList[category], setId)
+    if activeState then table.insert(_stateList, setId) 
+      for _, category in pairs(slotCategories) do 
+        if self.activeOnBar[setId][category] then 
+          table.insert(_onBarList[category], setId)
+        end
       end
     end
   end
@@ -628,9 +631,9 @@ end
 function SetManager:GetNumEquip(setId)
   local _numEquip = Template_SlotCategorySubtables("numeric")
   for _, category in pairs(slotCategories) do 
-    _numEquip[category] = self.numEquip[setId][category]
+    _numEquip[category] = self.numEquip[setId] and self.numEquip[setId][category] or 0
   end
-  return _numEquip["body"], numEquip["front"], numEquip["back"]  
+  return _numEquip["body"], _numEquip["front"], _numEquip["back"]  
 end
 
 
@@ -662,7 +665,9 @@ function GroupManager:GetSetManager( unitTag )
   -- check if there exists a set manager 
   if self.groupSets[unitName] then 
     return self.groupSets[unitName]
-  else 
+  elseif unitName == playerName then 
+    return PlayerSets
+  else
     return EmptySetManager
   end
 end 
@@ -809,7 +814,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   d(rawData)
   local data = self:DeserilizeData(rawData
 )
-  if ExoyDev then 
+  if libDebug and self.debug then 
     d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
     d(rawData)
     d("----")
@@ -1077,7 +1082,7 @@ local function Initialize()
   SlotManager:Initialize() 
 
   PlayerSets = SetManager:New("player") 
-  EmptySetManager = SetManager:New("group") --- need better name
+  EmptySetManager = SetManager:New("group")
 
   --- Register Events 
   EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, OnSlotUpdate )
@@ -1117,15 +1122,32 @@ local function ReadData(api, setId, unitTag)
 end
 
 
+local function FormatGroupData(groupData) 
+  local tab = { {}, {}, {}, {} }
+  for unit, data in pairs(groupData) do 
+    for ii = 1,4,1 do
+      tab[ii][unit] = data[ii]
+    end
+  end
+  return tab[1], tab[2], tab[3], tab[4]
+end 
+
+
+local function FormatAllData(playerData, ...) 
+  local tab = {...} 
+  for ii = 1,4,1 do 
+    tab[ii]["player"] = playerData[ii]
+  end
+  return tab[1], tab[2], tab[3], tab[4]
+end
+
+
 local function AccessSetManager(api, setId, unitType, groupTag)
 
   unitType = unitType or LSD_UNIT_TYPE_PLAYER
   if unitType == LSD_UNIT_TYPE_ALL then 
     local playerData = {ReadData(api, setId, "player")}
-    local groupData  = {AccessSetManager(api, setId, LSD_UNIT_TYPE_GROUP)}
-    local combinedData = groupData  
-    combinedData.player = playerData 
-    return combinedData
+    return FormatAllData(playerData, AccessSetManager(api, setId, LSD_UNIT_TYPE_GROUP) )
   end
 
   if unitType == LSD_UNIT_TYPE_GROUP then 
@@ -1133,10 +1155,10 @@ local function AccessSetManager(api, setId, unitType, groupTag)
     for ii=1,GetGroupSize() do 
       local unitTag = GetGroupUnitTagByIndex( ii ) 
       if IsUnitPlayer(unitTag) then 
-        groupData[unitTag] = {ReadData(unitTag, setId, funcName)}
+        groupData[unitTag] = {ReadData(api, setId, unitTag)}
       end
     end
-    return groupData
+    return FormatGroupData(groupData)
   end 
 
   local unitTag
@@ -1161,36 +1183,23 @@ end
 --[[ %% ----------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
----Input 
--- *unitTag*: for which unit(s) the data are to be provided
---    + all - player and all group member (outputs table of data)
---    + group - all group members (outputs table of data)
---    + player - only the player 
---    + group..i - specific group member
-
 function LibSetDetection.HasSet( setId, unitType, groupTag )
   setId = ConvertToUnperfected(setId) 
   return AccessSetManager( "HasSet", setId, unitType, groupTag)
-end
+end -- activeState, activeOnBody, activeOnFront, activeOnBack 
 
 function LibSetDetection.GetActiveSets( unitType, groupTag) 
   return AccessSetManager("GetActiveSets", nil, unitType, groupTag)
-end
+end -- activeList, activeOnBodyList, activeOnFrontList, activeOnBackList 
 
 function LibSetDetection.GetNumEquip(setId, unitType, groupTag) 
   setId = ConvertToUnperfected(setId)
   return AccessSetManager("GetNumEquip", setId, unitType, groupTag )  
-end
+end -- numBody, numFront, numBack
 
 function LibSetDetection.GetEquippedSets(unitType, groupTag) 
   return AccessSetManager("GetEquippedSets", nil, unitType, groupTag)   
-end
-
---- Utility
-function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
-  local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
-  return setId
-end
+end -- table equip
 
 
 --- Advanced 
@@ -1202,6 +1211,13 @@ end
 
 function LibSetDetection.GetUnitRawNumEquip() -- return data while still separating bettween normal and perf
 
+end
+
+
+--- Utility for Developer
+function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
+  local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
+  return setId
 end
 
 
@@ -1232,8 +1248,8 @@ function LibSetDetection:RegisterEvent( eventId, ... )
 end
 
 
-function LibSetDetection:UnregisterEvent( eventId, ... ) 
-  return CallbackManager:UpdateRegistry( false, eventId, ... )
+function LibSetDetection:UnregisterEvent( eventId, uniqueId, ... ) 
+  return CallbackManager:UpdateRegistry( false, eventId, uniqueId, nil, ... )
 end
 
 
@@ -1383,7 +1399,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d("SlotManager: "..tostring(SlotManager.debug))
     end
   else 
-    if cmd == "dev" and ExoyDev then 
+    if cmd == "dev" and libDebug then 
       --- call development functions 
       --Development.OutputEquippedSets()
       --Development.OutputPlayerSets()    
@@ -1406,33 +1422,18 @@ SLASH_COMMANDS["/lsd"] = function( input )
 end
 
 
+
+
 --[[ --------------------------- ]]
 --[[ -- Development Functions -- ]]
 --[[ --------------------------- ]]
 
 function Development.Test() 
-  -- test to check buffer overflow
-  local LGB = LibGroupBroadcast
-  local test = {}
-  test.handler = LGB:RegisterHandler("LibSetDetection_Test")
-  test.protocol = test.handler:DeclareProtocol(511, "SetData_Test")
-  local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
-      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
-      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
-      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
-    }), { minLength = 0, maxLength = 50 } )
-    test.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
-    test.protocol:OnData( function(...) d("receiveTestMsg") end )  
-    test.protocol:Finalize()
-
-  local data = {} 
-  for ii = 1,50 do 
-    table.insert(data, {["id"] = ii, ["body"] = 5, ["front"] = 1, ["back"] = 2 })
-  end
-
-  test.protocol:Send( {["NormalSets"] = data} )
-
+  local a,b,c,e = LibSetDetection.GetEquippedSets(1) 
+  local v,w,x,y = LibSetDetection.GetEquippedSets(2) 
+  d(a) 
+  d("---") 
+  d(v)
 end
 
 
