@@ -6,8 +6,6 @@ local libDebug = false
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
-
-
 --[[ ----------------------- ]]
 --[[ -- Internal Entities -- ]]
 --[[ ----------------------- ]]
@@ -20,7 +18,6 @@ local SlotManager = {}
 local PlayerSets = {}       
 local EmptySetManager = {}  
 local Development = {}      
-
 
 
 --[[ --------------- ]]
@@ -800,31 +797,33 @@ function DataMsg:DeserilizeData( rawData )
   for _, setData in ipairs(rawData.NormalSets) do 
     data[setData.id] = Template_SlotCategorySubtables("numeric", setData.body, setData.front, setData.back)
   end
-  if rawData.requestSync then 
-    self:SendData( PlayerSets.numEquip ) 
-    --- send message with current setup 
-    BroadcastManager.synchronized = true
-  end 
-  return data
+  return data, rawData.requestSync
 end
 
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
   --GetLocalPlayerGroupUnitTag() 
   local unitName = GetUnitName(unitTag)
-  d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
-  d(rawData)
-  local data = self:DeserilizeData(rawData
-)
-  if libDebug and self.debug then 
-    d( zo_strformat("Received Data from <<1>> (<<2>>)", GetUnitName(unitTag), unitTag ) ) 
-    d(rawData)
-    d("----")
-    d(self:DeserilizeData( rawData) )
-  end
+  
   if unitName == playerName then 
-
+    if libDebug and self.debug then 
+      debugMsg("BM", "Received Data from player" ) 
+    end
   else 
+    if libDebug and self.debug then 
+      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>)", unitName, unitTag ) ) 
+    end
+
+    local data, requestSync = self:DeserilizeData(rawData)
+
+    if requestSync then 
+      if libDebug and self.debug then 
+        debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
+      end
+      self:SendData( PlayerSets.numEquip ) 
+      BroadcastManager.synchronized = true
+    end
+
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
 end
@@ -833,8 +832,7 @@ end
 function DataMsg:SendData( numEquip ) 
   local requestSync = not BroadcastManager.synchronized
   local data = self:SerilizeData( numEquip, requestSync ) 
-  d("formatted data for sending")
-  d(data)
+  if libDebug and self.debug then debugMsg("BM", "sending data") end
   self.protocol:Send( data ) 
 end
 
@@ -968,7 +966,7 @@ end
 
 
 function SlotManager:Initialize() 
-  self.debug = false   --- entity debug toogle
+  self.debug = true
   self.equippedGear = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
@@ -1025,16 +1023,35 @@ function SlotManager:ResetQueue()
 end
 
 
+function SlotManager:ApplySpecialCases( numEquip ) 
+
+  -- no need to populate tables for "no setId"
+  numEquip[0] = nil
+  
+  -- ignore all other sets, when "Torq of the last ayleid king" mystical is equipped
+  local ayleidKing = 693
+  if numEquip[ayleidKing] then 
+    for setId, data in pairs(numEquip) do 
+      if setId ~= ayleidKing then numEquip[setId] = nil end 
+    end
+  end
+
+  return numEquip 
+end
+
+
 function SlotManager:SendData() ---rename
   local numEquip = {} 
-  for _, category in pairs(slotCategories) do  -- body, front, back 
+  for _, category in pairs(slotCategories) do  
     for slotId, _ in pairs( slotList[category]) do 
       local setId = self.equippedGear[slotId] 
       numEquip[setId] = numEquip[setId] or Template_SlotCategorySubtables("numeric") 
       numEquip[setId][category] = numEquip[setId][category] + 1
     end
   end 
-  numEquip[0] = nil
+
+  numEquip = self:ApplySpecialCases(numEquip) 
+  
   if libDebug and self.debug then 
     debugMsg("SM", "relay data")
     d( ExtendNumEquipData(numEquip) )
