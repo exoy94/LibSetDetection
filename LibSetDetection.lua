@@ -267,18 +267,18 @@ end
 -- *filter*:nilable (if *registryType = "SetChange", needs to be numer or table of numbers (setIds) )
 
 function CallbackManager:Initialize() 
-  self.debug = true
+  self.debug = false
   self.registry = {
     ["playerSetChange"] = {}, 
     ["groupSetChange"] = {}, 
-    ["playerUpdateData"] = {}, 
-    ["groupUpdateData"] = {}, 
+    ["playerDataUpdate"] = {}, 
+    ["groupDataUpdate"] = {}, 
   }
 end
 
 
 function CallbackManager:UpdateRegistry(action, eventId, uniqueId, callback, unitType, filter)
-  
+
   if unitType == LSD_UNIT_TYPE_ALL then   -- if unitType is nil or "all" execute function for "player" and "group"
     local resultPlayer = self:UpdateRegistry(action, eventId, uniqueId, callback, LSD_UNIT_TYPE_PLAYER, filter)
     local resultGroup = self:UpdateRegistry(action, eventId, uniqueId, callback, LSD_UNIT_TYPE_GROUP, filter)
@@ -289,7 +289,7 @@ function CallbackManager:UpdateRegistry(action, eventId, uniqueId, callback, uni
   local unitTypeStr = unitTypeList[unitType]
 
   if not IsString(uniqueId) then return REGISTRY_RESULT_INVALID_NAME end
-  if not registryName then return REGISTRY_RESULT_INVALID_EVENT end
+  if not registryType then return REGISTRY_RESULT_INVALID_EVENT end
   if not unitTypeStr then return REGISTRY_RESULT_INVALID_UNIT_TYPE end
 
     --- set change registry
@@ -681,7 +681,7 @@ end
 
 
 function GroupManager:Initialize() 
-  self.debug = true
+  self.debug = false
   self.isGrouped = IsUnitGrouped("player") 
   self.groupSets = {}
 
@@ -883,7 +883,7 @@ function DataMsg:InitMsgHandler()
       LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
     }), { minLength = 0, maxLength = 15 } )
   local weaponSetsArray = LGB.CreateArrayField( LGB.CreateTableField("WeaponSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 31}),     -- 5 bit
+      LGB.CreateNumericField("id", { minValue = 0, maxValue = 63}),     -- 6 bit
       LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
       LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
     }), { minLength = 0, maxLength = 2 } )  
@@ -892,7 +892,7 @@ function DataMsg:InitMsgHandler()
       LGB.CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
     }), { minLength = 0, maxLength = 2 } )
   self.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
-  self.protocol:AddField( weaponSetsArray ) -- 2 bit length + x* 9 bit
+  self.protocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
   self.protocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
   self.protocol:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
   self.protocol:AddField( LGB.CreateFlagField("requestSync") )
@@ -918,7 +918,7 @@ function BroadcastManager:UpdateActivityState()
     return var and true or false
   end
 
-  if libDebug and self.debug then debugMsg("BM", "activity state update ("..tostring(self.active)..")")  end
+  if libDebug and self.debug then debugMsg("BM", "activity state update (old:"..tostring(self.active)..")")  end
   local previousState = self.active
   local updatedState = false 
 
@@ -934,7 +934,7 @@ function BroadcastManager:UpdateActivityState()
   if libDebug and self.debug then d("is LibGroupBroadcast: "..tostring( GetBool(LibGroupBroadcast) ) ) end
   updateState = updateState and GetBool(LibGroupBroadcast) 
 
-  if libDebug and self.debug then d("updated state: "..tostring(updatedState) ) end
+  if libDebug and self.debug then d("new state: "..tostring(updatedState) ) end
   self.active = updatedState
 end 
 
@@ -951,7 +951,7 @@ function BroadcastManager:Initialize()
     self.dormant = true
     return 
   end
-  self.debug = true
+  self.debug = false
   self.synchronized = false 
   BroadcastManager:UpdateActivityState()
   self.DataMsg = DataMsg:Initialize( self.debug ) 
@@ -966,7 +966,7 @@ end
 
 
 function SlotManager:Initialize() 
-  self.debug = true
+  self.debug = false
   self.equippedGear = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
@@ -1259,11 +1259,11 @@ end
 --- Variables provided by Event:
 -- changeType *number*, setId *number*, unitTag *string*, activeOnBody *bool*, activeOnFront *bool*, activeOnBack *bool*, exceptions *table:nilable*
 
-function LibSetDetection:RegisterEvent( eventId, ... )
+function LibSetDetection.RegisterEvent( eventId, ... )
   return CallbackManager:UpdateRegistry( true, eventId, ...)
 end
 
-function LibSetDetection:UnregisterEvent( eventId, uniqueId, ... ) 
+function LibSetDetection.UnregisterEvent( eventId, uniqueId, ... ) 
   return CallbackManager:UpdateRegistry( false, eventId, uniqueId, nil, ... )
 end
 
