@@ -1316,11 +1316,6 @@ function LibSetDetection.GetNumSetPiecesForHotbar(setId, slotCategory)
 end
 
 
-function LibSetDetection.GetBarActiveSetIdMap()
-end
-
-
-
 --[[ ------------------- ]]
 --[[ -- Chat Command  -- ]]
 --[[ ------------------- ]]
