@@ -424,6 +424,7 @@ function SetManager:New( unitType )
     SM.debug = false     --- entity debug toogle
   end
   SM.unitType = unitType or "empty"
+  SM.rawData = {}
   SM.numEquip = {} 
   SM.activeOnBar = {}
   SM.activeState = {}
