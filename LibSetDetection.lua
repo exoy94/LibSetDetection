@@ -446,10 +446,12 @@ end
 function SetManager:InitTables( data ) 
   if libDebug and self.debug then debugMsg( self.debugHeader, "initialize tables") end
   self.archive = {} 
+  self.archive["rawData"] = ZO_ShallowTableCopy(self.rawData)
   self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
   self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
   self.archive["activeState"] = ZO_ShallowTableCopy(self.activeState)
-  self.numEquip = data
+  self.rawData = data
+  self.numEquip = {}
   self.activeOnBar = {}
   self.activeState = {}
 end
@@ -461,7 +463,7 @@ function SetManager:ConvertDataToUnperfected()
   local listOfPerfected = {}
   local listOfNormal = {}
   -- check, if any perfected sets are equipped
-  for setId, _ in pairs( self.numEquip ) do 
+  for setId, _ in pairs( self.rawData ) do 
     if GetItemSetUnperfectedSetId(setId) ~= 0 then 
       table.insert( listOfPerfected, setId ) 
     else 
@@ -470,17 +472,17 @@ function SetManager:ConvertDataToUnperfected()
   end
   -- add all normal sets to temporary 
   for _, setId in ipairs( listOfNormal ) do 
-    numEquipTemp[setId] = ZO_ShallowTableCopy(self.numEquip[setId]) 
+    numEquipTemp[setId] = ZO_ShallowTableCopy(self.rawData[setId]) 
   end
   -- add perfected count to corresponding unperfected version  
   for _, perfSetId in ipairs( listOfPerfected ) do 
     local unperfSetId = GetItemSetUnperfectedSetId(perfSetId) 
     if not numEquipTemp[unperfSetId] then 
     -- if no unperfected pieces are equipped, overwrite it with perfected
-      numEquipTemp[unperfSetId] = ZO_ShallowTableCopy(self.numEquip[perfSetId])
+      numEquipTemp[unperfSetId] = ZO_ShallowTableCopy(self.rawData[perfSetId])
     else 
     -- if unperfected pieces are equipped, add perfected ones
-      for slotCategory, numEquip in pairs( self.numEquip[perfSetId] ) do 
+      for slotCategory, numEquip in pairs( self.rawData[perfSetId] ) do 
         numEquipTemp[unperfSetId][slotCategory] = numEquipTemp[unperfSetId][slotCategory] + numEquip
       end
     end
@@ -489,7 +491,7 @@ function SetManager:ConvertDataToUnperfected()
   if libDebug and self.debug then 
     debugMsg( self.debugHeader, "convert data to unperfected")
     d("raw data:")
-    d(ExtendNumEquipData(self.numEquip) )
+    d(ExtendNumEquipData(self.rawData) )
     d("------------ End of raw data")
     d("converted data:")
     d(ExtendNumEquipData(numEquipTemp) )
@@ -501,7 +503,6 @@ function SetManager:ConvertDataToUnperfected()
     d("------------ End of conversion list")
   end
   -- overwrite data with converted data
-  self.numEquip = nil 
   self.numEquip = ZO_ShallowTableCopy(numEquipTemp)
 end
 
@@ -628,6 +629,9 @@ function SetManager:GetActiveSets()
 end
 
 
+
+
+
 function SetManager:GetNumEquip(setId)
   local _numEquip = Template_SlotCategorySubtables("numeric")
   for _, category in pairs(slotCategories) do 
@@ -639,6 +643,11 @@ end
 
 function SetManager:GetEquippedSets() 
   return ExtendNumEquipData( self.numEquip )
+end
+
+
+function SetManager:GetRawEquipData() 
+  return ExtendNumEquipData( self.rawData )
 end
 
 
@@ -709,15 +718,6 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 
-
---- ToDo-List 
--- Save variables for toggle 
--- handshake for group 
---    >>> send out greeting when joining group/after a relog/ reloadui 
---    >>> only enable data sharing when received at least one response 
---    >>> activate data share if addon is dormant and and receiving a handshake 
---    >>> handle change in group composition 
---    >>> send information if settings change
 
 --[[ -------------- ]]
 --[[ -- Data Msg -- ]]
@@ -800,6 +800,7 @@ function DataMsg:DeserilizeData( rawData )
     data[setData.id] = Template_SlotCategorySubtables("numeric", setData.body, setData.front, setData.back)
   end
   if rawData.requestSync then 
+    self:SendData( PlayerSets.numEquip ) 
     --- send message with current setup 
     BroadcastManager.synchronized = true
   end 
@@ -1174,6 +1175,7 @@ local function AccessSetManager(api, setId, unitType, groupTag)
   if not unitName or unitName == "" then return nil end
   
   return ReadData(api, setId, unitTag)
+
 end
 
 
@@ -1183,6 +1185,7 @@ end
 --[[ %% ----------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+
 function LibSetDetection.HasSet( setId, unitType, groupTag )
   setId = ConvertToUnperfected(setId) 
   return AccessSetManager( "HasSet", setId, unitType, groupTag)
@@ -1190,7 +1193,7 @@ end -- activeState, activeOnBody, activeOnFront, activeOnBack
 
 function LibSetDetection.GetActiveSets( unitType, groupTag) 
   return AccessSetManager("GetActiveSets", nil, unitType, groupTag)
-end -- activeList, activeOnBodyList, activeOnFrontList, activeOnBackList 
+end -- activeSets, setsActiveOnBody, setsActiveOnFront, setsActiveOnBack 
 
 function LibSetDetection.GetNumEquip(setId, unitType, groupTag) 
   setId = ConvertToUnperfected(setId)
@@ -1203,14 +1206,16 @@ end -- table equip
 
 
 --- Advanced 
-LibSetDetection.CheckException = CheckException
+function LibSetDetection.CheckException()
+  return CheckException
+end
 
 function LibSetDetection.GetPlayerEquippedGear() 
   return SlotManager.equippedGear 
 end
 
-function LibSetDetection.GetUnitRawNumEquip() -- return data while still separating bettween normal and perf
-
+function LibSetDetection.GetRawNumEquip(unitType, groupTag) 
+  return AccessSetManager("GetRawNumEquip", unitType, groupTag)
 end
 
 
@@ -1234,26 +1239,22 @@ end
 
 --- "SetChanged" Event
 --- Variables provided by Event:
---    1. setId (number):  
---    2. changeType (number):  
---    3. unitTag (string): "player" or "group"..i  (except group tag that corresponds with player)
---    4. isActiveOnBody (bool)
---    5. isActiveOnFront (bool) 
---    6. isActiveOnBack (bool) 
---    7. hasException
-
+-- changeType *number*, setId *number*, unitTag *string*, activeOnBody *bool*, activeOnFront *bool*, activeOnBack *bool*, exceptions *table:nilable*
 
 function LibSetDetection:RegisterEvent( eventId, ... )
   return CallbackManager:UpdateRegistry( true, eventId, ...)
 end
-
 
 function LibSetDetection:UnregisterEvent( eventId, uniqueId, ... ) 
   return CallbackManager:UpdateRegistry( false, eventId, uniqueId, nil, ... )
 end
 
 
---[[ Temporary Backwards Compatibility ]]
+
+--[[ ----------------------------- ]]
+--[[ -- Backwards Compatibility -- ]]
+--[[ ----------------------------- ]]
+
 function LibSetDetection.RegisterForSetChanges(uniqueId, callback) 
   LibSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER)
 end
