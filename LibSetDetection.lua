@@ -690,6 +690,8 @@ function GroupManager:Initialize()
     if isLocalPlayer then 
       self.isGrouped = true
       BroadcastManager:UpdateActivityState()
+      BroadcastManager.synchronized = false
+      BroadcastManager:SendData( PlayerSets.numEquip )
     else 
       
     end
