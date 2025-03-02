@@ -1205,6 +1205,80 @@ end
 --[[ %% ----------------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
+--- Event (Un-)Registration 
+
+function LibSetDetection.RegisterEvent( eventId, name, callback, unitType, param) 
+end
+
+function LibSetDetection.UnregsiterEvent( eventId, name, unitType, param )
+end
+
+
+
+--- Standard Data Access 
+
+function LibSetDetection.GetUnitSetActiveType( unitTag, setId )
+end
+
+function LibSetDetection.GetUnitSetNumEquip( unitTag, setId )
+end
+
+function LibSetDetection.GetUnitSetData( unitTag )
+end
+
+
+--- Raw Data Access 
+
+function LibSetDetection.GetUnitRawNumEquip( unitTag ) 
+end
+
+function LibSetDetection.GetPlayerEquippedGear( )
+end
+
+
+
+--- Data Availability 
+
+function LibSetDetection.AreUnitDataAvailable( unitTag ) 
+end
+
+function LibSetDetection.GetAvailableUnitTags() 
+end
+
+
+
+--- Utility Functions
+
+function LibSetDetection.ConvertActiveType( activeType ) 
+  local activeTypeConversion = {
+    [LSD_ACTIVE_TYPE_NONE] = {false, false, false, false},
+    [LSD_ACTIVE_TYPE_FRONT_BAR] = {true, false, true, false}, 
+    [LSD_ACTIVE_TYPE_BACK_BAR] = {true, false, false, true}, 
+    [LSD_ACTIVE_TYPE_DUAL_BAR] = {true, true, true, true},
+  }
+  if activeTypeConversion[activeType] then 
+    local returnTable = activeTypeConversioni[activeType]
+    return returnTable[1], returnTable[2], returnTable[3], returnTable[4]
+  else 
+    return end 
+  end
+end
+
+function LibSetDetection.GetSetIdByItemLink( itemLink )
+  local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
+  return setId
+end
+
+function LibSetDetection.GetSetName( setId ) 
+  return GetSetName( setId ) 
+end 
+
+function LibSetDetection.GetSetMaxEquip( setId )
+  return GetMaxEquip( setId ) 
+end
+
+
+--- old API 
 
 function LibSetDetection.HasSet( setId, unitType, groupTag )
   setId = ConvertToUnperfected(setId) 
