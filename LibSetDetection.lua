@@ -93,6 +93,11 @@ LSD_UNIT_TYPE_GROUP_MEMBER = 4
 LSD_EVENT_SET_CHANGE = 1 
 LSD_EVENT_DATA_UPDATE = 2
 
+LSD_ACTIVE_TYPE_NONE = 0 
+LSD_ACTIVE_TYPE_FRONT_BAR = 1
+LSD_ACTIVE_TYPE_BACK_BAR = 2 
+LSD_ACTIVE_TYPE_DUAL_BAR = 3  
+
 --[[ --------------------- ]]
 --[[ -- Local Variables -- ]]
 --[[ --------------------- ]]
