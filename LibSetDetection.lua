@@ -420,7 +420,7 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
       debugMsg("CM-Fire", msgPartOne..msgPartTwo )
     end
   elseif eventId == LSD_EVENT_DATA_UPDATE then 
-    -- parameter: unitTag, localPlayer, numEquipData, activeData
+    -- parameter: unitTag, localPlayer, numEquipList, activeList
     _FireCallbacks( registry, ... )
     --- debug
     if libDebug and self.debug then 
@@ -441,29 +441,21 @@ SetManager.__index = SetManager
 
 function SetManager:New( unitType )
   local SM = setmetatable({}, SetManager) 
-  --local SM = ZO_DeepTableCopy(SetManager) 
-  -- unitType ("player" or "group")
-  -- unitTag at the time of creation
-  if unitType == "player" then 
-    SM.debug = false   --- entity debug toogle
-  end
-  if unitType == "group" then 
-    SM.debug = false     --- entity debug toogle
-  end
-  SM.unitType = unitType or "empty"
+  if unitType == LSD_UNIT_TYPE_PLAYER then SM.debug = true   
+  elseif unitType == LSD_UNIT_TYPE_GROUP then SM.debug = false end
+  SM.unitType = unitType
   SM.rawData = {}
-  SM.numEquip = {} 
-  SM.activeOnBar = {}
-  SM.activeState = {}
+  SM.numEquipList = {} 
+  SM.activeList  = {}
   return SM
 end
 
 
-function SetManager:UpdateData( newData, unitTag )
-  self.debugHeader = zo_strformat( "SM <<1>> (<<2>>)", unitTag, GetUnitName(unitTag) )
+function SetManager:UpdateData( newRawData, unitTag )
+  self.debugHeader = zo_strformat( "SM <<1>> (<<2>>)", GetUnitName(unitTag), unitTag )
   if libDebug and self.debug then debugMsg( self.debugHeader, "update data" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
-  self:InitTables( newData )  -- updates archive and resets current 
+  self:InitTables( newRawData )  -- updates archive and resets current 
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
   self:AnalyseData()  -- determines, which sets are active 
   local changeList = self:DetermineChanges()  -- determine, what has changed (un-)equip/ update
@@ -471,26 +463,23 @@ function SetManager:UpdateData( newData, unitTag )
 end
 
 
-function SetManager:InitTables( data ) 
-  if libDebug and self.debug then debugMsg( self.debugHeader, "initialize tables") end
+function SetManager:InitTables( newRawData ) 
   self.archive = {} 
   self.archive["rawData"] = ZO_ShallowTableCopy(self.rawData)
-  self.archive["numEquip"] = ZO_ShallowTableCopy(self.numEquip)
-  self.archive["activeOnBar"] = ZO_ShallowTableCopy(self.activeOnBar)
-  self.archive["activeState"] = ZO_ShallowTableCopy(self.activeState)
-  self.rawData = data
-  self.numEquip = {}
-  self.activeOnBar = {}
-  self.activeState = {}
+  self.archive["numEquipList"] = ZO_ShallowTableCopy(self.numEquipList)
+  self.archive["activeList"] = ZO_ShallowTableCopy(self.activeList)
+  self.rawData = newRawData
+  self.numEquipData = {}
+  self.activeData = {}
 end
 
 
 function SetManager:ConvertDataToUnperfected() 
-  -- initialize local tables
+  --- initialize temporary tables
   local numEquipTemp = {}
   local listOfPerfected = {}
   local listOfNormal = {}
-  -- check, if any perfected sets are equipped
+  --- check, if any perfected sets are equipped
   for setId, _ in pairs( self.rawData ) do 
     if GetItemSetUnperfectedSetId(setId) ~= 0 then 
       table.insert( listOfPerfected, setId ) 
@@ -498,11 +487,11 @@ function SetManager:ConvertDataToUnperfected()
       table.insert( listOfNormal, setId )
     end
   end
-  -- add all normal sets to temporary 
+  --- add all normal sets to temporary 
   for _, setId in ipairs( listOfNormal ) do 
     numEquipTemp[setId] = ZO_ShallowTableCopy(self.rawData[setId]) 
   end
-  -- add perfected count to corresponding unperfected version  
+  --- add perfected count to corresponding unperfected version  
   for _, perfSetId in ipairs( listOfPerfected ) do 
     local unperfSetId = GetItemSetUnperfectedSetId(perfSetId) 
     if not numEquipTemp[unperfSetId] then 
@@ -515,96 +504,82 @@ function SetManager:ConvertDataToUnperfected()
       end
     end
   end
-  -- debug
+  self.numEquipList = numEquipTemp
+  --- debug
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "convert data to unperfected")
-    d("raw data:")
-    d(ExtendNumEquipData(self.rawData) )
-    d("------------ End of raw data")
-    d("converted data:")
-    d(ExtendNumEquipData(numEquipTemp) )
-    d("------------ End of converted data")
-    d("conversion list:")
-    for _, id in ipairs(listOfPerfected) do 
-      d( zo_strformat("<<1>> --> <<2>> (<<3>>)", id, GetItemSetUnperfectedSetId(id), GetSetName(id) ) )
+    if ZO_IsTableEmpty(listOfPerfected) then 
+      d("no normal/perfected conversion occured")
+    else 
+      d("conversionList:")
+      for _, id in ipairs(listOfPerfected) do 
+        local unperfId  = GetItemSetUnperfectedSetId(id)
+        d( zo_strformat("<<1>> --> <<2>> (<<3>>)", id, unperfId, GetSetName(unperfId) ) )
+      end
+      d("------------ End of conversionList")
     end
-    d("------------ End of conversion list")
+
+    debugMsg( self.debugHeader, "numEquipList")
+    d(ExtendNumEquipData(numEquipTemp) )
+    d("------------ End of numEquipList")
+
   end
-  -- overwrite data with converted data
-  self.numEquip = ZO_ShallowTableCopy(numEquipTemp)
 end
 
-
 function SetManager:AnalyseData() 
-  for setId, numEquip in pairs( self.numEquip ) do  
-    local active = {} 
-    local numFront = numEquip["body"] + numEquip["front"] 
-    local numBack = numEquip["body"] + numEquip["back"] 
+  for setId, numEquip in pairs( self.numEquipList ) do  
+
+    local numBody = numEquip["body"]
+    local numFront = numBody + numEquip["front"] 
+    local numBack = numBody + numEquip["back"] 
     local maxEquip = GetMaxEquip(setId)
-    active["front"] = numFront >= maxEquip
-    active["back"] = numBack >= maxEquip
-    active["body"] = numEquip["body"] >= maxEquip
-    self.activeOnBar[setId] = active 
+    
+    local activeOnFront = numFront >= maxEquip
+    local activeOnBack = numBack >= maxEquip
+
+    local activeType = LSD_ACTIVE_TYPE_NONE
+
+    if activeOnFront and activeOnBack then activeType = LSD_ACTIVE_TYPE_DUAL_BAR 
+    elseif activeOnFront then activeType = LSD_ACTIVE_TYPE_FRONT_BAR 
+    elseif activeOnBack then activeType = LSD_ACTIVE_TYPE_BACK_BAR
+    end
+
+    self.activeList[setId] = activeType
   end
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "analyse data") 
-    d("current activeOnBar list")
-    d( self.activeOnBar )
-    d("------------ End of current activeOnBar list")
+    debugMsg( self.debugHeader, "activeList") 
+    local activeListDecoded = {}
+    for setId, activeType in pairs(self.activeList) do 
+      activeListDecoded[setId] = activeTypes[activeType]
+    end
+    d( activeListDecoded)
+    d("------------ End of activeList")
   end
 end
 
 
 function SetManager:DetermineChanges() 
-  -- returns true if set is active on any bar, otherwise returns false 
-  local function GetActiveState( activeTable ) 
-    local isActive = false
-    for _, isActiveOnBar in pairs( activeTable )do
-      isActive = isActive or isActiveOnBar
-    end
-    return isActive
-  end
-  -- create table with current active states 
-  for setId, activeTable in pairs( self.activeOnBar ) do 
-    self.activeState[setId] = GetActiveState(activeTable) 
-  end
-  -- create table with changes 
+
   local changeList = {}
-  for setId, activeState in pairs( self.activeState ) do -- check all equipped sets
-    if activeState then -- if they are currently active:
-      if self.archive.activeState[setId] then   -- if they were aleady active
-        for _, category in pairs (slotCategories) do    -- check if active for each individual bar
-          if self.archive.activeOnBar[setId][category] ~= self.activeOnBar[setId][category] then 
-            changeList[setId] = LSD_CHANGE_TYPE_UPDATED  -- if at least one bar has changed --> updated
-            break
-          end
-        end
-      else   -- and weren't active before -> equipped
-        changeList[setId] = LSD_CHANGE_TYPE_ACTIVATED
+  --- check if changes occured to currently equipped sets
+  for setId, activeType in pairs( self.activeList ) do 
+    local previousActiveType = self.archive.activeList[setId] or LSD_ACTIVE_TYPE_NONE
+    if activeType ~= previousActiveType then -- only changes in activeType are of interest 
+      if activeType > 0 and previousActiveType == 0 then changeList[setId] = LSD_CHANGE_TYPE_ACTIVATED
+      elseif activeType > 0 then changeList[setId] = LSD_CHANGE_TYPE_UPDATED
+      elseif activeType == 0 then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED 
       end
     end
   end
-  -- check, if all previously active sets are still active, otherwise -> unequipped
-  for setId, archiveActiveState in pairs( self.archive.activeState ) do 
-    if archiveActiveState and not self.activeState[setId] then 
-      changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED
-    end
+  --- check if any previously equipped set was unequipped 
+  for setId, _ in pairs(self.archive.activeList ) do 
+    if not changeList[setId] then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED end
   end
+
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "determine changes") 
-    d("archive activeOnBar list ")
-    d( self.archive.activeOnBar )
-    d("------------ End of archive activeOnBar list")
-    d("archive activeState")
-    d(self.archive.activeState)
-    d("------------ End of archive activeState")
-    d("current activeState")
-    d(self.activeState)
-    d("------------ End of current activeState list ")
-    d("changeList") 
+    debugMsg( self.debugHeader, "changeList") 
     local changeListDecoded = {}
     for setId, changeType in pairs(changeList) do 
-      changeListDecoded[setId] = changeTypeList[changeType]
+      changeListDecoded[setId] = changeTypes[changeType]
     end
     d(changeListDecoded)
     d("------------ End of changeList")
@@ -616,18 +591,8 @@ end
 function SetManager:FireCallbacks( changeList ) 
   if libDebug and self.debug then debugMsg( self.debugHeader, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
-     -- initialize, because activeOnBar does not exist for completely unquipped sets
-    local activeOnBody = false
-    local activeOnFront = false
-    local activeOnBack = false 
-    -- update activeOnBar bools for existing sets
-    if changeType == LSD_CHANGE_TYPE_ACTIVATED or changeType == LSD_CHANGE_TYPE_UPDATED then 
-      activeOnBody = self.activeOnBar[setId]["body"]
-      activeOnFront = self.activeOnBar[setId]["front"]
-      activeOnBack =  self.activeOnBar[setId]["back"]
-    end
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
-      setId, changeType, self.unitTag, localPlayer, activeType) 
+      setId, changeType, self.unitTag, localPlayer, self.activeList[setId] ) 
   end
 end
 
