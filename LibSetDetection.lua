@@ -24,14 +24,11 @@ local Development = {}
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
-local function Template_SlotCategorySubtables( initType, initBody, initFront, initBack )
-  if initType == "table" then return { ["body"] = {}, ["front"] = {}, ["back"] = {} } end
-  if initType == "numeric" then 
-    _initBody = initBody or 0 
-    _initFront = initFront or 0 
-    _initBack = initBack or 0
-    return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
-  end
+local function Template_SlotCategorySubtables( initBody, initFront, initBack )
+  _initBody = initBody or 0 
+  _initFront = initFront or 0 
+  _initBack = initBack or 0
+  return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
 end
 
 --[[ ------------------------------- ]]
@@ -113,15 +110,17 @@ local unitTypes = {
 
 --- activeType 
 LSD_ACTIVE_TYPE_NONE = 0 
-LSD_ACTIVE_TYPE_FRONT_BAR = 1
-LSD_ACTIVE_TYPE_BACK_BAR = 2 
-LSD_ACTIVE_TYPE_DUAL_BAR = 3  
+LSD_ACTIVE_TYPE_DUAL_BAR = 1
+LSD_ACTIVE_TYPE_FRONT_BAR = 2
+LSD_ACTIVE_TYPE_BACK_BAR = 3 
+
 
 local activeTypes = {
   [LSD_ACTIVE_TYPE_NONE] = "None",
+  [LSD_ACTIVE_TYPE_DUAL_BAR] = "Dual",
   [LSD_ACTIVE_TYPE_FRONT_BAR] = "Front",
   [LSD_ACTIVE_TYPE_BACK_BAR] = "Back",
-  [LSD_ACTIVE_TYPE_DUAL_BAR] = "Dual",
+  
 }
 
 
@@ -237,9 +236,9 @@ end
 
 
 local function GetMaxEquip( setId )
-  local _, _, _, _, _, maxEquip = GetItemSetInfo( setId ) 
-  maxEquip = CheckException(setId, "maxEquip") or maxEquip
-  return maxEquip
+  local _, _, _, _, _, maxEquipZos = GetItemSetInfo( setId ) 
+  maxEquip = CheckException(setId, "maxEquip") or maxEquipZos
+  return maxEquip, maxEquipZos
 end
 
 
@@ -439,10 +438,15 @@ end   --- End of "FireCallbacks"
 
 SetManager.__index = SetManager 
 
-function SetManager:New( unitType )
+function SetManager:New( unitType, unitName )
   local SM = setmetatable({}, SetManager) 
-  if unitType == LSD_UNIT_TYPE_PLAYER then SM.debug = true   
-  elseif unitType == LSD_UNIT_TYPE_GROUP then SM.debug = false end
+  if unitType == LSD_UNIT_TYPE_PLAYER then 
+    SM.debug = true   
+    SM.localPlayer = true
+  elseif unitType == LSD_UNIT_TYPE_GROUP then 
+    SM.debug = false 
+    SM.localPlayer = unitName == playerName 
+  end
   SM.unitType = unitType
   SM.rawData = {}
   SM.numEquipList = {} 
@@ -592,55 +596,40 @@ function SetManager:FireCallbacks( changeList )
   if libDebug and self.debug then debugMsg( self.debugHeader, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
-      setId, changeType, self.unitTag, localPlayer, self.activeList[setId] ) 
+      setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] ) 
   end
+  CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, self.unitType, nil, 
+    self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
 end
 
 
-function SetManager:HasSet(setId) 
-  local _activeState = self.activeState[setId] or false 
-  local _activeOnBody = self.activeOnBar[setId] and self.activeOnBar[setId]["body"] or false 
-  local _activeOnFront = self.activeOnBar[setId] and self.activeOnBar[setId]["front"] or false 
-  local _activeOnBack = self.activeOnBar[setId] and self.activeOnBar[setId]["back"] or false 
-  return _activeState, _activeOnBody, _activeOnFront, _activeOnBack
-end 
 
+--[[ ---------------------------- ]]
+--[[ -- SetManager Exposed API -- ]]
+--[[ ---------------------------- ]] 
 
-function SetManager:GetActiveSets() 
-  local _stateList = {}
-  local _onBarList = Template_SlotCategorySubtables("table")
-  for setId, activeState in pairs( self.activeState ) do 
-    if activeState then table.insert(_stateList, setId) 
-      for _, category in pairs(slotCategories) do 
-        if self.activeOnBar[setId][category] then 
-          table.insert(_onBarList[category], setId)
-        end
-      end
-    end
+function SetManager:GetSetActiveType( setId ) 
+  return self.activeList[setId] or LSD_ACTIVE_TYPE_NONE
+end
+
+function SetManager:GetSetNumEquip( setId ) 
+  local numEquip = self.numEquipList[setId] or Template_SlotCategorySubtables()
+  return numEquip["body"], numEquip["front"], numEquip["back"]
+end
+
+function SetManager:GetSetData() 
+  local setData = {}
+  for setId, activeType in pairs( self.activeList ) do 
+    setData[setId].activeType = self.activeList[setId]
+    setData[setId].numEquip = self.numEquipList[setId] or Template_SlotCategorySubtables()
+    setData[setId].setName = GetSetName(setId) 
+    setData[setId].maxEquip = GetMaxEquip(setId)
   end
-  return _stateList, _onBarList["body"], _onBarList["front"], _onBarList["back"]
+  return setData
 end
 
-
-
-
-
-function SetManager:GetNumEquip(setId)
-  local _numEquip = Template_SlotCategorySubtables("numeric")
-  for _, category in pairs(slotCategories) do 
-    _numEquip[category] = self.numEquip[setId] and self.numEquip[setId][category] or 0
-  end
-  return _numEquip["body"], _numEquip["front"], _numEquip["back"]  
-end
-
-
-function SetManager:GetEquippedSets() 
-  return ExtendNumEquipData( self.numEquip )
-end
-
-
-function SetManager:GetRawEquipData() 
-  return ExtendNumEquipData( self.rawData )
+function SetManager:GetRawNumEquipList() 
+  return  ZO_DeepTableCopy( self.rawData )
 end
 
 
@@ -669,18 +658,41 @@ function GroupManager:GetSetManager( unitTag )
     return self.groupSets[unitName]
   elseif unitName == playerName then 
     return PlayerSets
-  else
-    return EmptySetManager
+  --else
+  --  return EmptySetManager
   end
 end 
+
+
+function GroupManager:UpdateGroupMap() 
+  self.groupMap = {}
+  for ii = 1, GetGroupSize() do 
+    local groupTag = GetGroupUnitTagByIndex(ii)
+    if IsUnitPlayer(unitTag) then 
+      self.groupMap[GetUnitName(groupTag)] = groupTag
+    end
+  end
+  self.mapOutdated = false 
+end
+
+
+
+function GroupManager:AreUnitDataAvailable( unitTag )  
+  local unitName = GetUnitName(unitTag) 
+  if unitName == playerName then return true end 
+  return self.groupSets[unitName] and true or false 
+end
+
 
 
 function GroupManager:Initialize() 
   self.debug = false
   self.isGrouped = IsUnitGrouped("player") 
   self.groupSets = {}
+  self.groupMap = {}
+  self.mapOutdated = true 
 
-  --- events
+  --- event callbacks
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
     if isLocalPlayer then 
       self.isGrouped = true
@@ -700,8 +712,13 @@ function GroupManager:Initialize()
       self.groupSets[unitName] = nil  
     end 
   end
+  local function OnGroupUpdate() 
+    self.mapOutdated = true 
+  end
+  --- event registration 
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, OnGroupMemberJoined )
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, OnGroupMemberLeft )
+  EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, OnGroupUpdate )
 end
 
 
@@ -738,7 +755,7 @@ function DataMsg:InternalToExternalId(category, internalId)
 end
 
 
-function DataMsg:SerilizeData( numEquipData, requestSync ) 
+function DataMsg:SerilizeData( rawNumEquipList, requestSync ) 
   local formattedData = { 
     ["requestSync"] = requestSync, 
     ["mystical"] = 0, 
@@ -778,21 +795,21 @@ function DataMsg:DeserilizeData( rawData )
   if not ZO_IsTableEmpty(rawData.WeaponSets) then 
     for _, setData in ipairs(rawData.WeaponSets) do 
       local setId = self:InternalToExternalId("weapon", setData.id )
-      data[setId] = Template_SlotCategorySubtables("numeric", 0, setData.front, setData.back)
+      data[setId] = Template_SlotCategorySubtables( 0, setData.front, setData.back )
     end
   end
   if not ZO_IsTableEmpty(rawData.UndauntedSets) then 
     for _, setData in pairs(rawData.UndauntedSets) do 
       local setId = self:InternalToExternalId("undaunted", setData.id )
-      data[setId] = Template_SlotCategorySubtables("numeric", setData.body)
+      data[setId] = Template_SlotCategorySubtables( setData.body )
     end
   end
   if rawData.mystical ~= 0 then 
     local setId = self:InternalToExternalId("mystical", rawData.mystical )
-    data[setId] = Template_SlotCategorySubtables("numeric", 1)
+    data[setId] = Template_SlotCategorySubtables( 1 )
   end
   for _, setData in ipairs(rawData.NormalSets) do 
-    data[setData.id] = Template_SlotCategorySubtables("numeric", setData.body, setData.front, setData.back)
+    data[setData.id] = Template_SlotCategorySubtables( setData.body, setData.front, setData.back )
   end
   return data, rawData.requestSync
 end
@@ -817,7 +834,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
       if libDebug and self.debug then 
         debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
       end
-      self:SendData( PlayerSets.numEquip ) 
+      self:SendData( PlayerSets.numEquipList ) 
       BroadcastManager.synchronized = true
     end
 
@@ -826,10 +843,10 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
 end
 
 
-function DataMsg:SendData( numEquip ) 
+function DataMsg:SendData( rawNumEquipList ) 
   local requestSync = not BroadcastManager.synchronized
-  local data = self:SerilizeData( numEquip, requestSync ) 
-  if libDebug and self.debug then debugMsg("BM", "sending data") end
+  local data = self:SerilizeData( rawNumEquipList, requestSync ) 
+  if libDebug and self.debug then debugMsg("BM", zo_strformat("sending data; requestSync = <<1>>", requestSync and "true" or "false") ) end
   self.protocol:Send( data ) 
 end
 
@@ -936,9 +953,9 @@ function BroadcastManager:UpdateActivityState()
 end 
 
 
-function BroadcastManager:SendData(numEquip) 
+function BroadcastManager:SendData(rawNumEquipList) 
   if self.dormant then return end
-  self.DataMsg:SendData(numEquip)
+  self.DataMsg:SendData(rawNumEquipList)
   self.synchronized = true
 end
 
@@ -968,7 +985,7 @@ function SlotManager:Initialize()
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
   end
-  self.queueDuration = 3000 --- ToDo add setting for advanced user ? 
+  self.queueDuration = 3000 
 end
 
 
@@ -977,7 +994,7 @@ function SlotManager:UpdateLoadout()
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
-  self:SendData()  
+  self:RelayData()  
 end
 
 
@@ -1014,51 +1031,46 @@ function SlotManager:ResetQueue()
   end
   self.queueId = zo_callLater( function() 
     if libDebug and self.debug then debugMsg("SM", "end queue") end
-    self:SendData()
+    self:RelayData()
     self.queueId = nil 
   end, self.queueDuration ) 
 end
 
 
 function SlotManager:ApplySpecialCases( numEquip ) 
-
-  -- no need to populate tables for "no setId"
+  --- no need to populate tables for "no setId"
   numEquip[0] = nil
-  
-  -- ignore all other sets, when "Torq of the last ayleid king" mystical is equipped
+  --- ignore all other sets, when "Torq of the last ayleid king" mystical is equipped
   local ayleidKing = 693
   if numEquip[ayleidKing] then 
     for setId, data in pairs(numEquip) do 
       if setId ~= ayleidKing then numEquip[setId] = nil end 
     end
   end
-
   return numEquip 
 end
 
 
-function SlotManager:SendData() ---rename
-  local numEquip = {} 
+function SlotManager:RelayData() 
+  local rawNumEquipList = {} 
   for _, category in pairs(slotCategories) do  
     for slotId, _ in pairs( slotList[category]) do 
       local setId = self.equippedGear[slotId] 
-      numEquip[setId] = numEquip[setId] or Template_SlotCategorySubtables("numeric") 
-      numEquip[setId][category] = numEquip[setId][category] + 1
+      rawNumEquipList[setId] = rawNumEquipList[setId] or Template_SlotCategorySubtables() 
+      rawNumEquipList[setId][category] = rawNumEquipList[setId][category] + 1
     end
   end 
 
-  numEquip = self:ApplySpecialCases(numEquip) 
+  rawNumEquipList = self:ApplySpecialCases(rawNumEquipList) 
   
   if libDebug and self.debug then 
     debugMsg("SM", "relay data")
-    d( ExtendNumEquipData(numEquip) )
+    d( ExtendNumEquipData(rawNumEquipList) )
     d("---------- end: relay data")
   end
 
-  PlayerSets:UpdateData( numEquip, "player" ) 
-  BroadcastManager:SendData( numEquip ) 
-  CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, LSD_UNIT_TYPE_PLAYER, nil,  
-    "player", true, numEquip, activeData )
+  PlayerSets:UpdateData( rawNumEquipList, "player" ) 
+  BroadcastManager:SendData( rawNumEquipList ) 
 end
 
 
@@ -1212,24 +1224,46 @@ end
 
 
 
+local function AccessSetManager( api, unitTag, setId ) 
+  setId = ConvertDataToUnperfected(setId) 
+  local SM  
+  if unitTag == "player" then 
+    SM = PlayerSets
+  else 
+    SM = GroupManager:GetSetManager( unitTag )
+  end
+  --- return values 
+  if SM then 
+    return SM[api](SM, setId)
+  else 
+    return 
+  end
+end
+
+
 --- Standard Data Access 
 
 function LibSetDetection.GetUnitSetActiveType( unitTag, setId )
+  return AccessSetManager( "GetSetActiveType", unitTag, setId )
 end
 
 function LibSetDetection.GetUnitSetNumEquip( unitTag, setId )
+  return AccessSetManager( "GetSetNumEquip", unitTag, setId )  
 end
 
 function LibSetDetection.GetUnitSetData( unitTag )
+  return AccessSetManager( "GetSetData", unitTag, setId )
 end
 
 
 --- Raw Data Access 
 
-function LibSetDetection.GetUnitRawNumEquip( unitTag ) 
+function LibSetDetection.GetUnitRawNumEquipList( unitTag ) 
+  return AccessSetManager( "GetRawNumEquipList", unitTag )
 end
 
 function LibSetDetection.GetPlayerEquippedGear( )
+  return ZO_DeepTableCopy( SlotManager.equippedGear )
 end
 
 
@@ -1237,9 +1271,20 @@ end
 --- Data Availability 
 
 function LibSetDetection.AreUnitDataAvailable( unitTag ) 
+  local unitName = GetUnitName(unitTag) 
+  if unitName == playerName then return true end 
+  return GroupManager.groupSets[unitName] and true or false 
 end
 
 function LibSetDetection.GetAvailableUnitTags() 
+  local GM = GroupManager 
+  if GM.remapRequired then GM:UpdateGroupMap() end 
+  local availableTags = {}
+  table.insert(availableTags, "player")
+  for unitName, _ in pairs(GM.groupSets) do 
+    table.insert( availableTags, GM.groupMap[unitName])
+  end
+  return availableTags 
 end
 
 
@@ -1275,75 +1320,8 @@ function LibSetDetection.GetSetMaxEquip( setId )
 end
 
 
---- old API 
-
-function LibSetDetection.HasSet( setId, unitType, groupTag )
-  setId = ConvertToUnperfected(setId) 
-  return AccessSetManager( "HasSet", setId, unitType, groupTag)
-end -- activeState, activeOnBody, activeOnFront, activeOnBack 
-
-function LibSetDetection.GetActiveSets( unitType, groupTag) 
-  return AccessSetManager("GetActiveSets", nil, unitType, groupTag)
-end -- activeSets, setsActiveOnBody, setsActiveOnFront, setsActiveOnBack 
-
-function LibSetDetection.GetNumEquip(setId, unitType, groupTag) 
-  setId = ConvertToUnperfected(setId)
-  return AccessSetManager("GetNumEquip", setId, unitType, groupTag )  
-end -- numBody, numFront, numBack
-
-function LibSetDetection.GetEquippedSets(unitType, groupTag) 
-  return AccessSetManager("GetEquippedSets", nil, unitType, groupTag)   
-end -- table equip
-
-
---- Advanced 
-function LibSetDetection.CheckException()
-  return CheckException
-end
-
-function LibSetDetection.GetPlayerEquippedGear() 
-  return SlotManager.equippedGear 
-end
-
-function LibSetDetection.GetRawNumEquip(unitType, groupTag) 
-  return AccessSetManager("GetRawNumEquip", unitType, groupTag)
-end
-
-
---- Utility for Developer
-function LibSetDetection.GetSetIdFromItemLink( itemlink ) 
-  local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
-  return setId
-end
-
-
---[[ Exposed Functions of CallbackManager ]]
-
---- User Input: 
---    1. id (string - case sensitive): unique name (for each registryType/unitType) 
---    2. callback (function): called when appropriate callbacks fire
---    3. unitType (number): "player" or "group" or "all" (nil = "all") 
---    4. filter:nilable (optional for "SetChange") - table of filter values (setId), for registration or unregistration  
-
---EventSetChange( action, setId, unitTag, isActiveOnBody, isActiveOnFrontbar, isActiveOnBackbar)
---*action*: 0 = unequip, 1 = equip, 2 = activityChange 
-
---- "SetChanged" Event
---- Variables provided by Event:
--- changeType *number*, setId *number*, unitTag *string*, activeOnBody *bool*, activeOnFront *bool*, activeOnBack *bool*, exceptions *table:nilable*
-
-function LibSetDetection.RegisterEvent( eventId, ... )
-  return CallbackManager:UpdateRegistry( true, eventId, ...)
-end
-
-function LibSetDetection.UnregisterEvent( eventId, uniqueId, ... ) 
-  return CallbackManager:UpdateRegistry( false, eventId, uniqueId, nil, ... )
-end
-
-
-
 --[[ ----------------------------- ]]
---[[ -- Backwards Compatibility -- ]]
+--[[ -- Backwards Compatibility -- ]] ---ToDo
 --[[ ----------------------------- ]]
 
 function LibSetDetection.RegisterForSetChanges(uniqueId, callback) 
@@ -1363,7 +1341,7 @@ function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
 end
 
 
-function LibSetDetection.GetCompleteSetsList() ---checked
+function LibSetDetection.GetCompleteSetsList() 
   local PS = PlayerSets 
   local returnTable = {}
   for setId, complete in pairs( PS.activeState ) do 
@@ -1375,17 +1353,17 @@ function LibSetDetection.GetCompleteSetsList() ---checked
 end
 
 
-function LibSetDetection.GetEquipSlotList() ---checked
+function LibSetDetection.GetEquipSlotList() 
   return slotList
 end
 
 
-function LibSetDetection.GetSlotIdSetIdMap() ---checked
+function LibSetDetection.GetSlotIdSetIdMap() 
   return SlotManager.equippedGear
 end
 
 
-function LibSetDetection.GetEquippedSetsTable() ---checked
+function LibSetDetection.GetEquippedSetsTable() 
   local PS = PlayerSets
   local returnTable = {}
   for setId, _ in pairs( PS.activeState ) do 
