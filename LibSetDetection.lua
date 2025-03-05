@@ -445,7 +445,7 @@ function SetManager:New( unitType, unitName )
     SM.localPlayer = true
   elseif unitType == LSD_UNIT_TYPE_GROUP then 
     SM.debug = false 
-    SM.localPlayer = unitName == playerName 
+    SM.localPlayer = false
   end
   SM.unitType = unitType
   SM.rawData = {}
@@ -651,15 +651,15 @@ function GroupManager:UpdateSetData( unitName, unitTag, data )
 end
 
 
-function GroupManager:GetSetManager( unitTag ) 
+function GroupManager:GetSetManager( unitTag, provideEmptySM ) 
   local unitName = GetUnitName(unitTag)
   -- check if there exists a set manager 
   if self.groupSets[unitName] then 
     return self.groupSets[unitName]
   elseif unitName == playerName then 
     return PlayerSets
-  --else
-  --  return EmptySetManager
+  else
+    if provideEmptySM then return EmptySetManager end
   end
 end 
 
@@ -1283,7 +1283,8 @@ function LibSetDetection.GetAvailableUnitTags()
   table.insert(availableTags, "player")
   for unitName, _ in pairs(GM.groupSets) do 
     table.insert( availableTags, GM.groupMap[unitName])
-  end
+  end 
+  if GM.isGrouped then table.insert(availableTags, GetLocalPlayerGroupUnitTag() ) end
   return availableTags 
 end
 
@@ -1319,69 +1320,34 @@ function LibSetDetection.GetSetMaxEquip( setId )
   return GetMaxEquip( setId ) 
 end
 
-
---[[ ----------------------------- ]]
---[[ -- Backwards Compatibility -- ]] ---ToDo
---[[ ----------------------------- ]]
-
-function LibSetDetection.RegisterForSetChanges(uniqueId, callback) 
-  LibSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER)
-end
-
-function LibSetDetection.RegisterForSpecificSetChanges(uniqueId, setId, callback)
-  LibsSetDetection.RegisterEvent( LSD_EVENT_SET_CHANGE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER, setId)
-end
-
-function LibSetDetection.RegisterForCustomSlopUpdateEvent(uniqueId, callback) 
-  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, callback, LSD_UNIT_TYPE_PLAYER) 
-end
-
-function LibSetDetection.UnregisterForCustomSlopUpdateEvent(uniqueId)
-  LibSetDetection.RegisterEvent( LSD_EVENT_DATA_UPDATE, uniqueId, nil, LSD_UNIT_TYPE_PLAYER)
-end
-
-
-function LibSetDetection.GetCompleteSetsList() 
-  local PS = PlayerSets 
-  local returnTable = {}
-  for setId, complete in pairs( PS.activeState ) do 
-    if complete then 
-      returnTable[setId] = GetSetName(setId) 
-    end
-  end
-  return returnTable
-end
-
-
 function LibSetDetection.GetEquipSlotList() 
-  return slotList
+  return ZO_ShallowTableCopy(slotList)
 end
 
 
-function LibSetDetection.GetSlotIdSetIdMap() 
-  return SlotManager.equippedGear
-end
-
+--[[ ----------------------------- ]]
+--[[ -- Backwards Compatibility -- ]]
+--[[ -- for used function in V3 -- ]] 
+--[[ -- according to esoui      -- ]]
+--[[ ----------------------------- ]]
 
 function LibSetDetection.GetEquippedSetsTable() 
   local PS = PlayerSets
   local returnTable = {}
-  for setId, _ in pairs( PS.activeState ) do 
+  for setId, activeType in pairs( PS.activeList ) do 
     local setData = {}
     setData.name = GetSetName( setId ) 
     setData.maxEquipped = GetMaxEquip( setId ) 
     setData.numEquipped = PS.numEquip[setId] 
-    setData.activeBar = PS.activeOnBar[setId]
+    local _, activeOnBody, activeOnFront, activeOnBack = LibSetDetection.ConvertActiveType( activeType)
+    setData.activeBar = {
+        ["body"] = activeOnBody, 
+        ["front"] = activeOnFront, 
+        ["back"] = activeOnBack,
+    }
     returnTable[setId] = setData 
   end
   return returnTable
-end
-
-
-function LibSetDetection.GetNumSetPiecesForHotbar(setId, slotCategory)
-  local barList = {"front", "back", "body"}
-  local PS = PlayerSets 
-  return PS.numEquip[setId][barlist[slotCategory]]
 end
 
 
