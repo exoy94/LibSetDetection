@@ -816,9 +816,7 @@ end
 
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
-  --GetLocalPlayerGroupUnitTag() 
-  local unitName = GetUnitName(unitTag)
-  
+  local unitName = GetUnitName(unitTag) -- who send information 
   if unitName == playerName then 
     if libDebug and self.debug then 
       debugMsg("BM", "Received Data from player" ) 
@@ -829,7 +827,6 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
     end
 
     local data, requestSync = self:DeserilizeData(rawData)
-
     if requestSync then 
       if libDebug and self.debug then 
         debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
@@ -837,7 +834,6 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
       self:SendData( PlayerSets.numEquipList ) 
       BroadcastManager.synchronized = true
     end
-
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
 end
@@ -887,6 +883,7 @@ end
 
 
 function DataMsg:InitMsgHandler() 
+  if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
   self.handler = LGB:RegisterHandler("LibSetDetection")
   self.protocol = self.handler:DeclareProtocol(42, "SetData")
@@ -919,7 +916,6 @@ function DataMsg:Initialize(debug)
   self.debug = debug
   self:DefineIdMapping()
   self:InitMsgHandler() 
-  return self
 end
 
 --[[ -------------------------- ]]
@@ -927,48 +923,17 @@ end
 --[[ -------------------------- ]]
 
 
-function BroadcastManager:UpdateActivityState()
-  local function GetBool( var ) 
-    return var and true or false
-  end
-
-  if libDebug and self.debug then debugMsg("BM", "activity state update (old:"..tostring(self.active)..")")  end
-  local previousState = self.active
-  local updatedState = false 
-
-  --- true setter (or arguments) 
-  -- state is set to true, if any of the following conditions is not met
-  if libDebug and self.debug then d("--- true setter ---") end
-  if libDebug and self.debug then d("is grouped: "..tostring(GroupManager.isGrouped)) end
-  updatedState = updatedState or GroupManager.isGrouped
-
-  --- false setter (and arguments) 
-  -- state is set to false, if any of the following conditions is not met
-  if libDebug and self.debug then d("--- false setter ---") end
-  if libDebug and self.debug then d("is LibGroupBroadcast: "..tostring( GetBool(LibGroupBroadcast) ) ) end
-  updateState = updateState and GetBool(LibGroupBroadcast) 
-
-  if libDebug and self.debug then d("new state: "..tostring(updatedState) ) end
-  self.active = updatedState
-end 
-
-
 function BroadcastManager:SendData(rawNumEquipList) 
-  if self.dormant then return end
+  if not LibGroupBroadcast then return end
   self.DataMsg:SendData(rawNumEquipList)
   self.synchronized = true
 end
 
 
 function BroadcastManager:Initialize() 
-  if not LibGroupBroadcast then 
-    self.dormant = true
-    return 
-  end
   self.debug = false
   self.synchronized = false 
-  BroadcastManager:UpdateActivityState()
-  self.DataMsg = DataMsg:Initialize( self.debug ) 
+  DataMsg:Initialize( self.debug ) 
 end
 
 
@@ -1130,99 +1095,11 @@ end
 EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 
 
-
 --[[ %%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% --------------- %% ]]
 --[[ %% -- Interface -- %% ]]
 --[[ %% --------------- %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%% ]]
-
-
-local function ReadData(api, setId, unitTag) 
-  local SM
-  if unitTag == "player" then 
-    SM = PlayerSets
-  else 
-    SM = GroupManager:GetSetManager( unitTag ) 
-  end
-  return SM[api](SM, setId)
-end
-
-
-local function FormatGroupData(groupData) 
-  local tab = { {}, {}, {}, {} }
-  for unit, data in pairs(groupData) do 
-    for ii = 1,4,1 do
-      tab[ii][unit] = data[ii]
-    end
-  end
-  return tab[1], tab[2], tab[3], tab[4]
-end 
-
-
-local function FormatAllData(playerData, ...) 
-  local tab = {...} 
-  for ii = 1,4,1 do 
-    tab[ii]["player"] = playerData[ii]
-  end
-  return tab[1], tab[2], tab[3], tab[4]
-end
-
-
-local function AccessSetManager(api, setId, unitType, groupTag)
-
-  unitType = unitType or LSD_UNIT_TYPE_PLAYER
-  if unitType == LSD_UNIT_TYPE_ALL then 
-    local playerData = {ReadData(api, setId, "player")}
-    return FormatAllData(playerData, AccessSetManager(api, setId, LSD_UNIT_TYPE_GROUP) )
-  end
-
-  if unitType == LSD_UNIT_TYPE_GROUP then 
-    local groupData = {}
-    for ii=1,GetGroupSize() do 
-      local unitTag = GetGroupUnitTagByIndex( ii ) 
-      if IsUnitPlayer(unitTag) then 
-        groupData[unitTag] = {ReadData(api, setId, unitTag)}
-      end
-    end
-    return FormatGroupData(groupData)
-  end 
-
-  local unitTag
-  if unitType == LSD_UNIT_TYPE_PLAYER then 
-    unitTag = "player" 
-  elseif unitType == LSD_UNIT_TYPE_GROUP_MEMBER then 
-    unitTag = groupTag
-  end
-  
-  if not IsUnitPlayer(unitTag) then return end
-  -- validate unitTag by checking for name of corresponding unit
-  local unitName = GetUnitName(unitTag) 
-  if not unitName or unitName == "" then return nil end
-  
-  return ReadData(api, setId, unitTag)
-
-end
-
-
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ----------------------- %% ]]
---[[ %% -- Exposed Functions -- %% ]]
---[[ %% ----------------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
-
---- Event (Un-)Registration 
-
--- eventId, name, callback, unitType, param
-function LibSetDetection.RegisterEvent( eventId, name, callback, unitType, param ) 
-  return CallbackManager:UpdateRegistry( true, eventId, name, callback, unitType, param)
-end
-
-function LibSetDetection.UnregsiterEvent( eventId, name, unitType, param )
-  return CallbackManager:UpdateRegistry( false, eventId, name, nil, unitType, param)
-end
-
-
 
 local function AccessSetManager( api, unitTag, setId ) 
   setId = ConvertDataToUnperfected(setId) 
@@ -1240,9 +1117,24 @@ local function AccessSetManager( api, unitTag, setId )
   end
 end
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %% -- Exposed Functions -- %% ]]
+--[[ %% ----------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+--- Event (Un-)Registration 
+-- eventId, name, callback, unitType, param
+function LibSetDetection.RegisterEvent( eventId, name, callback, unitType, param ) 
+  return CallbackManager:UpdateRegistry( true, eventId, name, callback, unitType, param)
+end
+
+function LibSetDetection.UnregsiterEvent( eventId, name, unitType, param )
+  return CallbackManager:UpdateRegistry( false, eventId, name, nil, unitType, param)
+end
+
 
 --- Standard Data Access 
-
 function LibSetDetection.GetUnitSetActiveType( unitTag, setId )
   return AccessSetManager( "GetSetActiveType", unitTag, setId )
 end
@@ -1257,7 +1149,6 @@ end
 
 
 --- Raw Data Access 
-
 function LibSetDetection.GetUnitRawNumEquipList( unitTag ) 
   return AccessSetManager( "GetRawNumEquipList", unitTag )
 end
@@ -1267,9 +1158,7 @@ function LibSetDetection.GetPlayerEquippedGear( )
 end
 
 
-
 --- Data Availability 
-
 function LibSetDetection.AreUnitDataAvailable( unitTag ) 
   local unitName = GetUnitName(unitTag) 
   if unitName == playerName then return true end 
@@ -1289,9 +1178,7 @@ function LibSetDetection.GetAvailableUnitTags()
 end
 
 
-
 --- Utility Functions
-
 function LibSetDetection.ConvertActiveType( activeType ) 
   local activeTypeConversion = {
     [LSD_ACTIVE_TYPE_NONE] = {false, false, false, false},
@@ -1325,10 +1212,11 @@ function LibSetDetection.GetEquipSlotList()
 end
 
 
+
 --[[ ----------------------------- ]]
 --[[ -- Backwards Compatibility -- ]]
---[[ -- for used function in V3 -- ]] 
---[[ -- according to esoui      -- ]]
+--[[ -- for function used in V3 -- ]] 
+--[[ --    according to esoui   -- ]]
 --[[ ----------------------------- ]]
 
 function LibSetDetection.GetEquippedSetsTable() 
@@ -1350,7 +1238,6 @@ function LibSetDetection.GetEquippedSetsTable()
   return returnTable
 end
 
-
 --[[ ------------------- ]]
 --[[ -- Chat Command  -- ]]
 --[[ ------------------- ]]
@@ -1363,7 +1250,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     ["debug"] = "toggles global debug variable"
   }
 
-  --deserializ input 
+  ---deserializ input 
   input = string.lower(input) 
   local param = {}
   for str in string.gmatch(input, "%S+") do
@@ -1371,7 +1258,6 @@ SLASH_COMMANDS["/lsd"] = function( input )
   end
 
   local cmd = table.remove(param, 1) 
-
   
   if not cmd or cmd == ""  then 
     d("[LibSetDetection] - command overview")
@@ -1430,21 +1316,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d("SlotManager: "..tostring(SlotManager.debug))
     end
   else 
-    if cmd == "dev" and libDebug then 
+    if cmd == "dev" and ExoyDev then 
       --- call development functions 
-      --Development.OutputEquippedSets()
-      --Development.OutputPlayerSets()    
-      if param[1] == "registry" then 
-        Development.OutputRegistry()
-      elseif param[1] == "active" then 
-        BroadcastManager:UpdateActivityState()    
-      elseif param[1] == "groupsets" then 
-        Development.OutputGroupManager()   
-      elseif param[1] == "equipped" then 
-        Development.OutputEquippedSets() 
-      elseif param[1] == "test" then 
-        Development.Test()      
-      end
     else 
       d("[LibSetDetection] command unknown")
     end
@@ -1453,39 +1326,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
 end
 
 
-
-
 --[[ --------------------------- ]]
 --[[ -- Development Functions -- ]]
 --[[ --------------------------- ]]
 
-function Development.Test() 
-  local a,b,c,e = LibSetDetection.GetEquippedSets(1) 
-  local v,w,x,y = LibSetDetection.GetEquippedSets(2) 
-  d(a) 
-  d("---") 
-  d(v)
-end
-
-
-function Development.OutputEquippedSets() 
-  d(SlotManager.equippedGear)
-end
-
-function Development.OutputPlayerSets() 
-  d(PlayerSets.numEquip)
-end
-
-function Development.OutputRegistry()
-  d("LSD - Output Registry") 
-  d(CallbackManager.registry)
-end
-
-function Development.OutputGroupManager()
-  d(GroupManager.groupSets)
-end
-
-function Development.OutputLookupTables()
-  d("Executing LookupTable Init")
-  Init_LookupTables() 
-end
