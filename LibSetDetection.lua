@@ -699,9 +699,7 @@ local function OnGroupMemberJoined(_, charName, _, isLocalPlayer)
   if isLocalPlayer then 
     GroupManager.isGrouped = true
     BroadcastManager.synchronized = false
-    BroadcastManager:SendData( PlayerSets.numEquip )
-  else 
-    
+    BroadcastManager:SendData( PlayerSets.numEquipList )   
   end
 end
 
