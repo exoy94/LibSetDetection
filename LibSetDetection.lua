@@ -446,7 +446,7 @@ SetManager.__index = SetManager
 function SetManager:New( unitType, unitName )
   local SM = setmetatable({}, SetManager) 
   if unitType == LSD_UNIT_TYPE_PLAYER then 
-    SM.debug = false  
+    SM.debug = true  
     SM.localPlayer = true
   elseif unitType == LSD_UNIT_TYPE_GROUP then 
     SM.debug = false 
@@ -478,8 +478,8 @@ function SetManager:InitTables( newRawData )
   self.archive["numEquipList"] = ZO_ShallowTableCopy(self.numEquipList)
   self.archive["activeList"] = ZO_ShallowTableCopy(self.activeList)
   self.rawData = newRawData
-  self.numEquipData = {}
-  self.activeData = {}
+  self.numEquipList = {}
+  self.activeList = {}
 end
 
 
@@ -526,11 +526,9 @@ function SetManager:ConvertDataToUnperfected()
       end
       d("------------ End of conversionList")
     end
-
     debugMsg( self.debugHeader, "numEquipList")
     d(ExtendNumEquipData(numEquipTemp) )
     d("------------ End of numEquipList")
-
   end
 end
 
@@ -567,7 +565,6 @@ end
 
 
 function SetManager:DetermineChanges() 
-
   local changeList = {}
   --- check if changes occured to currently equipped sets
   for setId, activeType in pairs( self.activeList ) do 
@@ -686,16 +683,11 @@ function GroupManager:UpdateGroupMap()
 end
 
 
-
 function GroupManager:AreUnitDataAvailable( unitTag )  
   local unitName = GetUnitName(unitTag) 
   if unitName == playerName then return true end 
   return self.groupSets[unitName] and true or false 
 end
-
-
-
-
 
 
 function GroupManager:Initialize() 
