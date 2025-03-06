@@ -278,7 +278,7 @@ end
 
 
 function CallbackManager:Initialize() 
-  self.debug = false
+  self.debug = true
 
   --- initialize registry tables 
   self.registry = {}
@@ -320,7 +320,7 @@ function CallbackManager:UpdateRegistry(action, eventId, name, callback, unitTyp
   if not IsValidEventSpecificParameter(eventId, param) then resultCode = REGISTRY_RESULT_INVALID_FILTER end
   if resultCode ~= 0 then return resultCode end 
   --- define registry 
-  local eventName = events[LSD_EVENT_SET_CHANGE]
+  local eventName = events[eventId]
   local unitTypeName = unitTypes[unitType]
   local registry = self.registry[eventName][unitTypeName]
   --- (un-)registration
@@ -352,23 +352,27 @@ function CallbackManager:UpdateSetChangeRegistry( action, name, callback, regist
   else 
     table.insert(filter, 0)
   end
+  --- results 
+  local resultTable = {}
   --- (un-)registration
-  for _, setId in pairs(filter) do 
+  for key, setId in ipairs(filter) do 
+    resultTable[key] = REGISTRY_RESULT_SUCCESS
     registry[setId] = registry[setId] or {}
     local callbackList = registry[setId]
     if action then    
-      if callbackList[name] then return REGISTRY_RESULT_DUPLICATE_NAME end
+      if callbackList[name] then resultTable[key] = REGISTRY_RESULT_DUPLICATE_NAME end
       if IsFunction(callback) then 
         callbackList[name] = callback 
       else 
-        return REGISTRY_RESULT_INVALID_CALLBACK 
+        resultTable[key] = REGISTRY_RESULT_INVALID_CALLBACK 
       end
     else  
-      if not callbackList[name] then return REGISTRY_RESULT_UNKNOWN_NAME end 
+      if not callbackList[name] then resultTable[key] = REGISTRY_RESULT_UNKNOWN_NAME end 
       callbackList[name] = nil
     end 
   end
-  return REGISTRY_RESULT_SUCCESS
+  return resultTable 
+
 end   --- End of "UpdateSetChangeRegistry"
 
 
@@ -387,6 +391,7 @@ function CallbackManager:UpdateDataUpdateRegistry( action, name, callback, callb
     if not callbackList[name] then return REGISTRY_RESULT_UNKNOWN_NAME end 
     callbackList[name] = nil
   end
+  return REGISTRY_RESULT_SUCCESS
 end   --- End of "UpdateDataUpdateRegistry"
 
 
@@ -401,7 +406,7 @@ end
 
 function CallbackManager:FireCallbacks( eventId, unitType, setId, ... ) 
   --- define registry 
-  local eventName = events[LSD_EVENT_SET_CHANGE]
+  local eventName = events[eventId]
   local unitTypeName = unitTypes[unitType]
   local registry = self.registry[eventName][unitTypeName]
   --- fire callbacks
@@ -414,7 +419,7 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
       local p = {...}
       local msgPartOne = zo_strformat( "<<1>> for <<2>> (<<3>>): ", 
         eventName, GetUnitName(p[3]), p[3] ) 
-      local msgPartTwo = zo_strformat("<<1>> <<2>> (<<3>>) - Active:<<4>>", 
+      local msgPartTwo = zo_strformat("><<1>>< <<2>> (<<3>>) - Active:<<4>>", 
         changeTypes[p[2]], GetSetName( p[1] ), p[1], p[5] )
       debugMsg("CM-Fire", msgPartOne..msgPartTwo )
     end
@@ -441,7 +446,7 @@ SetManager.__index = SetManager
 function SetManager:New( unitType, unitName )
   local SM = setmetatable({}, SetManager) 
   if unitType == LSD_UNIT_TYPE_PLAYER then 
-    SM.debug = true   
+    SM.debug = false  
     SM.localPlayer = true
   elseif unitType == LSD_UNIT_TYPE_GROUP then 
     SM.debug = false 
@@ -597,6 +602,10 @@ function SetManager:FireCallbacks( changeList )
   for setId, changeType in pairs( changeList ) do 
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
       setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] ) 
+    if self.unitTag == "player" and GroupManager.isGrouped then 
+      CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, LSD_UNIT_TYPE_GROUP, setId, 
+      setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] ) 
+    end
   end
   CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, self.unitType, nil, 
     self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
@@ -697,7 +706,6 @@ function GroupManager:Initialize()
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
     if isLocalPlayer then 
       self.isGrouped = true
-      BroadcastManager:UpdateActivityState()
       BroadcastManager.synchronized = false
       BroadcastManager:SendData( PlayerSets.numEquip )
     else 
@@ -707,7 +715,6 @@ function GroupManager:Initialize()
   local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
     if isLocalPlayer then 
       self.isGrouped = false 
-      BroadcastManager:UpdateActivityState()
     else 
       local unitName = ConvertCharToUnitName(charName) 
       self.groupSets[unitName] = nil  
@@ -932,7 +939,7 @@ end
 
 
 function BroadcastManager:Initialize() 
-  self.debug = false
+  self.debug = true
   self.synchronized = false 
   DataMsg:Initialize( self.debug ) 
 end
@@ -1314,6 +1321,10 @@ SLASH_COMMANDS["/lsd"] = function( input )
   else 
     if cmd == "dev" and ExoyDev then 
       --- call development functions 
+      if param[1] == "registry" then 
+        debugMsg("Dev", "Registry")
+        d(CallbackManager.registry)
+      end
     else 
       d("[LibSetDetection] command unknown")
     end
