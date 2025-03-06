@@ -620,6 +620,7 @@ end
 function SetManager:GetSetData() 
   local setData = {}
   for setId, activeType in pairs( self.activeList ) do 
+    setData[setId] = {}
     setData[setId].activeType = self.activeList[setId]
     setData[setId].numEquip = self.numEquipList[setId] or Template_SlotCategorySubtables()
     setData[setId].setName = GetSetName(setId) 
@@ -763,7 +764,7 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
     ["WeaponSets"] = {},
     ["UndauntedSets"] = {},  
   }
-  for setId, setData in pairs( numEquipData ) do 
+  for setId, setData in pairs( rawNumEquipList ) do 
     local setType = self:GetSetType( setId ) 
     if setType == SET_TYPE_NORMAL then 
       table.insert(formattedData["NormalSets"], {
@@ -925,7 +926,7 @@ end
 
 function BroadcastManager:SendData(rawNumEquipList) 
   if not LibGroupBroadcast then return end
-  self.DataMsg:SendData(rawNumEquipList)
+  DataMsg:SendData(rawNumEquipList)
   self.synchronized = true
 end
 
@@ -1102,7 +1103,7 @@ EM:RegisterForEvent( libName, EVENT_ADD_ON_LOADED, OnAddonLoaded)
 --[[ %%%%%%%%%%%%%%%%%%%%% ]]
 
 local function AccessSetManager( api, unitTag, setId ) 
-  setId = ConvertDataToUnperfected(setId) 
+  setId = ConvertToUnperfected(setId) 
   local SM  
   if unitTag == "player" then 
     SM = PlayerSets
@@ -1144,7 +1145,7 @@ function LibSetDetection.GetUnitSetNumEquip( unitTag, setId )
 end
 
 function LibSetDetection.GetUnitSetData( unitTag )
-  return AccessSetManager( "GetSetData", unitTag, setId )
+  return AccessSetManager( "GetSetData", unitTag  )
 end
 
 
@@ -1206,11 +1207,6 @@ end
 function LibSetDetection.GetSetMaxEquip( setId )
   return GetMaxEquip( setId ) 
 end
-
-function LibSetDetection.GetEquipSlotList() 
-  return ZO_ShallowTableCopy(slotList)
-end
-
 
 
 --[[ ----------------------------- ]]
