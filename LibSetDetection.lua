@@ -577,8 +577,8 @@ function SetManager:DetermineChanges()
     end
   end
   --- check if any previously equipped set was unequipped 
-  for setId, _ in pairs(self.archive.activeList ) do 
-    if not changeList[setId] then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED end
+  for setId, previousActiveType in pairs(self.archive.activeList ) do 
+    if previousActiveType > 0 and not self.activeList[setId] then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED end
   end
 
   if libDebug and self.debug then 
@@ -675,7 +675,7 @@ function GroupManager:UpdateGroupMap()
   self.groupMap = {}
   for ii = 1, GetGroupSize() do 
     local groupTag = GetGroupUnitTagByIndex(ii)
-    if IsUnitPlayer(unitTag) then 
+    if IsUnitPlayer(groupTag) then 
       self.groupMap[GetUnitName(groupTag)] = groupTag
     end
   end
@@ -693,6 +693,9 @@ end
 function GroupManager:Initialize() 
   self.debug = false
   self.isGrouped = IsUnitGrouped("player") 
+  if self.isGrouped then 
+    self:UpdateGroupMap()
+  end
   self.groupSets = {}
   self.groupMap = {}
   self.mapOutdated = true 
@@ -719,10 +722,16 @@ function GroupManager:Initialize()
     self.mapOutdated = true 
   end
 
+  local function OnGroupMemberConnectedStatus(_, unitTag, connected ) 
+    local unitName = GetUnitName(unitTag) 
+    if not connected then GroupManager.groupSets[unitName] = nil end
+  end
+
   --- event registration 
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, OnGroupMemberJoined )
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, OnGroupMemberLeft )
   EM:RegisterForEvent(libName, EVENT_GROUP_UPDATE, OnGroupUpdate )
+  EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_CONNECTED_STATUS, OnGroupMemberConnectedStatus)
 end
 
 
@@ -889,28 +898,32 @@ end
 function DataMsg:InitMsgHandler() 
   if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
+  local CreateArrayField = LGB.CreateArrayField
+  local CreateTableField = LGB.CreateTableField 
+  local CreateNumericField = LGB.CreateNumericField
+  local CreateFlagField = LGB.CreateFlagField
   self.handler = LGB:RegisterHandler("LibSetDetection")
   self.protocol = self.handler:DeclareProtocol(42, "SetData")
-  local normalSetsArray = LGB.CreateArrayField( LGB.CreateTableField("NormalSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
-      LGB.CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
-      LGB.CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
-      LGB.CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
+  local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
+      CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
+      CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
+      CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
     }), { minLength = 0, maxLength = 15 } )
-  local weaponSetsArray = LGB.CreateArrayField( LGB.CreateTableField("WeaponSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 63}),     -- 6 bit
-      LGB.CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
-      LGB.CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
+  local weaponSetsArray = CreateArrayField( CreateTableField("WeaponSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 63}),     -- 6 bit
+      CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
+      CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
     }), { minLength = 0, maxLength = 2 } )  
-  local undauntedSetsArray = LGB.CreateArrayField( LGB.CreateTableField("UndauntedSets", {
-      LGB.CreateNumericField("id", { minValue = 0, maxValue = 127}),  -- 7 bit
-      LGB.CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
+  local undauntedSetsArray = CreateArrayField( CreateTableField("UndauntedSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 127}),  -- 7 bit
+      CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
     }), { minLength = 0, maxLength = 2 } )
   self.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
   self.protocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
   self.protocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
-  self.protocol:AddField( LGB.CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
-  self.protocol:AddField( LGB.CreateFlagField("requestSync") )
+  self.protocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
+  self.protocol:AddField( CreateFlagField("requestSync") )
   self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   self.protocol:Finalize()
 end
@@ -1171,7 +1184,7 @@ end
 
 function LibSetDetection.GetAvailableUnitTags() 
   local GM = GroupManager 
-  if GM.remapRequired then GM:UpdateGroupMap() end 
+  if GM.mapOutdated then GM:UpdateGroupMap() end 
   local availableTags = {}
   table.insert(availableTags, "player")
   for unitName, _ in pairs(GM.groupSets) do 
@@ -1320,6 +1333,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
       if param[1] == "registry" then 
         debugMsg("Dev", "Registry")
         d(CallbackManager.registry)
+      elseif param[1] == "groupmap" then 
+        debugMsg("Dev", "GroupMap") 
+        d(GroupManager.groupMap)
       end
     else 
       d("[LibSetDetection] command unknown")
