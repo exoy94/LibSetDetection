@@ -694,6 +694,31 @@ function GroupManager:AreUnitDataAvailable( unitTag )
 end
 
 
+  --- event callbacks
+local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
+  if isLocalPlayer then 
+    GroupManager.isGrouped = true
+    BroadcastManager.synchronized = false
+    BroadcastManager:SendData( PlayerSets.numEquip )
+  else 
+    
+  end
+end
+
+local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
+  if isLocalPlayer then 
+    GroupManager.isGrouped = false 
+  else 
+    local unitName = ConvertCharToUnitName(charName) 
+    GroupManager.groupSets[unitName] = nil  
+  end 
+end
+
+local function OnGroupUpdate() 
+  self.mapOutdated = true 
+end
+
+
 
 function GroupManager:Initialize() 
   self.debug = false
@@ -702,27 +727,6 @@ function GroupManager:Initialize()
   self.groupMap = {}
   self.mapOutdated = true 
 
-  --- event callbacks
-  local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
-    if isLocalPlayer then 
-      self.isGrouped = true
-      BroadcastManager.synchronized = false
-      BroadcastManager:SendData( PlayerSets.numEquip )
-    else 
-      
-    end
-  end
-  local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
-    if isLocalPlayer then 
-      self.isGrouped = false 
-    else 
-      local unitName = ConvertCharToUnitName(charName) 
-      self.groupSets[unitName] = nil  
-    end 
-  end
-  local function OnGroupUpdate() 
-    self.mapOutdated = true 
-  end
   --- event registration 
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_JOINED, OnGroupMemberJoined )
   EM:RegisterForEvent(libName, EVENT_GROUP_MEMBER_LEFT, OnGroupMemberLeft )
