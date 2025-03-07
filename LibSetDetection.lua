@@ -1204,7 +1204,7 @@ function LibSetDetection.ConvertActiveType( activeType )
     [LSD_ACTIVE_TYPE_DUAL_BAR] = {true, true, true, true},
   }
   if activeTypeConversion[activeType] then 
-    local returnTable = activeTypeConversioni[activeType]
+    local returnTable = activeTypeConversion[activeType]
     return returnTable[1], returnTable[2], returnTable[3], returnTable[4]
   else 
     return 
@@ -1238,7 +1238,7 @@ function LibSetDetection.GetEquippedSetsTable()
     local setData = {}
     setData.name = GetSetName( setId ) 
     setData.maxEquipped = GetMaxEquip( setId ) 
-    setData.numEquipped = PS.numEquip[setId] 
+    setData.numEquipped = PS.numEquipList[setId] 
     local _, activeOnBody, activeOnFront, activeOnBack = LibSetDetection.ConvertActiveType( activeType)
     setData.activeBar = {
         ["body"] = activeOnBody, 
