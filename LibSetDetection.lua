@@ -903,7 +903,7 @@ function DataMsg:InitMsgHandler()
   local CreateNumericField = LGB.CreateNumericField
   local CreateFlagField = LGB.CreateFlagField
   self.handler = LGB:RegisterHandler("LibSetDetection")
-  self.protocol = self.handler:DeclareProtocol(42, "SetData")
+  self.protocol = self.handler:DeclareProtocol(40, "SetData")
   local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
       CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
       CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
