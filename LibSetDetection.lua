@@ -1146,7 +1146,7 @@ function LibSetDetection.RegisterEvent( eventId, name, callback, unitType, param
   return CallbackManager:UpdateRegistry( true, eventId, name, callback, unitType, param)
 end
 
-function LibSetDetection.UnregsiterEvent( eventId, name, unitType, param )
+function LibSetDetection.UnregisterEvent( eventId, name, unitType, param )
   return CallbackManager:UpdateRegistry( false, eventId, name, nil, unitType, param)
 end
 
