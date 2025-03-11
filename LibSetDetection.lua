@@ -1290,8 +1290,12 @@ function LibSetDetection.GetSetIdByItemLink( itemLink )
   return setId
 end
 
-function LibSetDetection.GetSetName( setId ) 
-  return GetSetName( setId ) 
+function LibSetDetection.GetSetName( setId, withoutPerfectedString ) 
+  if withoutPerfectedString then 
+    return GetSetName( ConvertToUnperfected(setId) )
+  else 
+    return GetSetName( setId )
+  end 
 end 
 
 function LibSetDetection.GetSetMaxEquip( setId )
