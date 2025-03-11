@@ -17,8 +17,8 @@ local SetManager = {}
 local SlotManager = {}       
 local PlayerSets = {}       
 local EmptySetManager = {}  
-local Development = {}      
-
+local LookupTables = {}
+local Development = {}     
 
 --[[ --------------- ]]
 --[[ -- Templates -- ]]
@@ -49,6 +49,10 @@ end
 
 local function IsFunction(f)
   return type(f) == "function"
+end
+
+local function IsBool( b ) 
+  return type(b) == "boolean"
 end
 
 local function InvertTable( t ) 
@@ -114,15 +118,26 @@ LSD_ACTIVE_TYPE_DUAL_BAR = 1
 LSD_ACTIVE_TYPE_FRONT_BAR = 2
 LSD_ACTIVE_TYPE_BACK_BAR = 3 
 
-
 local activeTypes = {
   [LSD_ACTIVE_TYPE_NONE] = "None",
   [LSD_ACTIVE_TYPE_DUAL_BAR] = "Dual",
   [LSD_ACTIVE_TYPE_FRONT_BAR] = "Front",
   [LSD_ACTIVE_TYPE_BACK_BAR] = "Back",
-  
 }
 
+
+--- setType 
+LSD_SET_TYPE_NORMAL = 0 
+LSD_SET_TYPE_MYSTICAL = 1 
+LSD_SET_TYPE_UNDAUNTED = 2 
+LSD_SET_TYPE_WEAPON = 3
+
+local setTypes = {
+  [LSD_SET_TYPE_NORMAL] = "normal", 
+  [LSD_SET_TYPE_MYSTICAL] = "mystical", 
+  [LSD_SET_TYPE_UNDAUNTED] = "undaunted", 
+  [LSD_SET_TYPE_WEAPON] = "weapon", 
+}
 
 --[[ --------------------- ]]
 --[[ -- Local Variables -- ]]
@@ -173,14 +188,6 @@ local twoHanderList = {
 local exceptionList = {
   [695] = { ["maxEquip"] = 5 }  -- Shattered-Fate
 }
-
-
---- result code definition for callback manager
-
-
-
-
-
 
 
 --[[ -------------------------------- ]]
@@ -439,9 +446,9 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
     --- debug
     if libDebug and self.debug then 
       local p = {...}
-      local msgPartOne = zo_strformat( "<<1>> for <<2>> (<<3>>): ", 
-        eventName, GetUnitName(p[3]), p[3] ) 
-      local msgPartTwo = zo_strformat("><<1>>< <<2>> (<<3>>) - Active:<<4>>", 
+      local msgPartOne = zo_strformat( "<<1>> for <<2>> (<<3>> - <<4>>): ", 
+        eventName, GetUnitName(p[3]), p[3], p[4] and "local" or "remote" ) 
+      local msgPartTwo = zo_strformat("><<1>>< <<2>> (<<3>>) - Active: <<4>>", 
         changeTypes[p[2]], GetSetName( p[1] ), p[1], p[5] )
       debugMsg("CM-Fire", msgPartOne..msgPartTwo )
     end
@@ -620,14 +627,18 @@ function SetManager:FireCallbacks( changeList )
   if libDebug and self.debug then debugMsg( self.debugHeader, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
-      setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] ) 
+      setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
     if self.unitTag == "player" and GroupManager.isGrouped then 
       CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, LSD_UNIT_TYPE_GROUP, setId, 
-      setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] ) 
+      setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
     end
   end
   CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, self.unitType, nil, 
     self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
+  if self.unitTag == "player" and GroupManager.isGrouped then 
+    CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, LSD_UNIT_TYPE_GROUP, nil, 
+    self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
+  end
 end
 
 
@@ -670,12 +681,11 @@ end
 
 
 function GroupManager:UpdateSetData( unitName, unitTag, data ) 
-  local _gs = self.groupSets  
-  if _gs[unitName] then 
-    _gs[unitName]:UpdateData( data, unitTag ) 
+  if self.groupSets[unitName] then 
+    self.groupSets[unitName]:UpdateData( data, unitTag ) 
   else 
-    _gs[unitName] = SetManager:New( LSD_UNIT_TYPE_GROUP )
-    _gs[unitName]:UpdateData( data, unitTag )
+    self.groupSets[unitName] = SetManager:New( LSD_UNIT_TYPE_GROUP )
+    self.groupSets[unitName]:UpdateData( data, unitTag )
   end
 end
 
@@ -726,8 +736,7 @@ function GroupManager:Initialize()
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
     if isLocalPlayer then 
       GroupManager.isGrouped = true
-      BroadcastManager.synchronized = false
-      BroadcastManager:SendData( PlayerSets.numEquipList )   
+      BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, true, false )   
     end
   end
   
@@ -772,30 +781,8 @@ end
 
 DataMsg = {}
 
-local SET_TYPE_NORMAL = 0 
-local SET_TYPE_MYSTICAL = 1 
-local SET_TYPE_UNDAUNTED = 2 
-local SET_TYPE_WEAPON = 3
-
-function DataMsg:GetSetType( setId )  
-  if self:ExternalToInternalId("mystical", setId) then return SET_TYPE_MYSTICAL 
-  elseif self:ExternalToInternalId("undaunted", setId) then return SET_TYPE_UNDAUNTED
-  elseif self:ExternalToInternalId("weapon", setId) then return SET_TYPE_WEAPON
-  else 
-    return SET_TYPE_NORMAL 
-  end
-end
-
-function DataMsg:ExternalToInternalId(category, externalId)
-  return self.internalId[category][externalId]
-end
-
-function DataMsg:InternalToExternalId(category, internalId)
-  return self.externalId[category][internalId]
-end
-
-
 function DataMsg:SerilizeData( rawNumEquipList, requestSync ) 
+  local LUT = LookupTables
   local formattedData = { 
     ["requestSync"] = requestSync, 
     ["mystical"] = 0, 
@@ -804,23 +791,23 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
     ["UndauntedSets"] = {},  
   }
   for setId, setData in pairs( rawNumEquipList ) do 
-    local setType = self:GetSetType( setId ) 
-    if setType == SET_TYPE_NORMAL then 
+    local setType = LUT:GetSetType( setId ) 
+    if setType == LSD_SET_TYPE_NORMAL then 
       table.insert(formattedData["NormalSets"], {
         id=setId, 
         body=setData.body, 
         front = setData.front, 
         back = setData.back} )
-    elseif setType == SET_TYPE_MYSTICAL then
-      formattedData["mystical"] = self:ExternalToInternalId("mystical", setId)
-    elseif setType == SET_TYPE_UNDAUNTED then 
+    elseif setType == LSD_SET_TYPE_MYSTICAL then
+      formattedData["mystical"] = LUT:ExternalToInternalId("mystical", setId)
+    elseif setType == LSD_SET_TYPE_UNDAUNTED then 
       table.insert(formattedData["UndauntedSets"], {
-        id=self:ExternalToInternalId("undaunted", setId), 
+        id=LUT:ExternalToInternalId("undaunted", setId), 
         body = setData.body
       })
-    elseif setType == SET_TYPE_WEAPON then 
+    elseif setType == LSD_SET_TYPE_WEAPON then 
       table.insert( formattedData["WeaponSets"], {
-        id = self:ExternalToInternal("weapon", setId),
+        id = LUT:ExternalToInternalId("weapon", setId),
         front = setData.front,
         back = setData.back
       })
@@ -831,21 +818,22 @@ end
 
 
 function DataMsg:DeserilizeData( rawData ) 
+  local LUT = LookupTables
   local data = {}
   if not ZO_IsTableEmpty(rawData.WeaponSets) then 
     for _, setData in ipairs(rawData.WeaponSets) do 
-      local setId = self:InternalToExternalId("weapon", setData.id )
+      local setId = LUT:InternalToExternalId("weapon", setData.id )
       data[setId] = Template_SlotCategorySubtables( 0, setData.front, setData.back )
     end
   end
   if not ZO_IsTableEmpty(rawData.UndauntedSets) then 
     for _, setData in pairs(rawData.UndauntedSets) do 
-      local setId = self:InternalToExternalId("undaunted", setData.id )
+      local setId = LUT:InternalToExternalId("undaunted", setData.id )
       data[setId] = Template_SlotCategorySubtables( setData.body )
     end
   end
   if rawData.mystical ~= 0 then 
-    local setId = self:InternalToExternalId("mystical", rawData.mystical )
+    local setId = LUT:InternalToExternalId("mystical", rawData.mystical )
     data[setId] = Template_SlotCategorySubtables( 1 )
   end
   for _, setData in ipairs(rawData.NormalSets) do 
@@ -859,11 +847,11 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   local unitName = GetUnitName(unitTag) -- who send information 
   if unitName == playerName then 
     if libDebug and self.debug then 
-      debugMsg("BM", "Received Data from player" ) 
+      debugMsg("BM","Received Data from player" ) 
     end
   else 
     if libDebug and self.debug then 
-      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>)", unitName, unitTag ) ) 
+      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>)", unitName, unitTag ) )
     end
 
     local data, requestSync = self:DeserilizeData(rawData)
@@ -871,8 +859,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
       if libDebug and self.debug then 
         debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
       end
-      self:SendData( PlayerSets.numEquipList ) 
-      BroadcastManager.synchronized = true
+      BroadcastManager.QueueBroadcast( PlayerSets.numEquipList, false, true )
     end
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
@@ -882,43 +869,10 @@ end
 function DataMsg:SendData( rawNumEquipList ) 
   local requestSync = not BroadcastManager.synchronized
   local data = self:SerilizeData( rawNumEquipList, requestSync ) 
-  if libDebug and self.debug then debugMsg("BM", zo_strformat("sending data; requestSync = <<1>>", requestSync and "true" or "false") ) end
-  self.protocol:Send( data ) 
-end
-
-
-function DataMsg:DefineIdMapping() 
-  local mysticalList = {}
-  local twoBoniSets = {} 
-  for ii = 0, 2047 do 
-    local maxEquip = GetMaxEquip( ii )
-    if maxEquip == 1 then table.insert(mysticalList, ii) end
-    if maxEquip == 2 then table.insert(twoBoniSets, ii) end 
-  end 
-
-  -- filter two boni into undaunted and abilityAltering 
-  -- based on the fact that all abilityAltering sets have a perfected and normal version 
-  local twoBoniSetsInverted = InvertTable(twoBoniSets)
-  local abilityAlteringList = {}
-  for setId, key in pairs( twoBoniSetsInverted ) do 
-    local unperfSetId = GetItemSetUnperfectedSetId(setId)
-    if unperfSetId ~= 0 then 
-      table.insert( abilityAlteringList, unperfSetId )
-      table.insert( abilityAlteringList, setId) 
-      twoBoniSetsInverted[unperfSetId] = nil 
-      twoBoniSetsInverted[setId] = nil
-    end
+  if libDebug and self.debug then 
+    debugMsg("BM", zo_strformat("sending data; requestSync = <<1>>", requestSync and "true" or "false") )
   end
-
-  self.internalId = {}
-  self.internalId["mystical"] = InvertTable(mysticalList)  
-  self.internalId["undaunted"] =  InvertTable(twoBoniSetsInverted)
-  self.internalId["weapon"] = abilityAlteringList
-
-  self.externalId = {}
-  self.externalId["mystical"] = mysticalList 
-  self.externalId["undaunted"] = twoBoniSetsInverted
-  self.externalId["weapon"] = InvertTable(abilityAlteringList)
+  self.protocol:Send( data ) 
 end
 
 
@@ -930,6 +884,8 @@ function DataMsg:InitMsgHandler()
   local CreateNumericField = LGB.CreateNumericField
   local CreateFlagField = LGB.CreateFlagField
   self.handler = LGB:RegisterHandler("LibSetDetection")
+  self.handler:SetDisplayName("Lib Set Detection")
+  self.handler:SetDescription("Shares equipped set pieces with group members.")
   self.protocol = self.handler:DeclareProtocol(40, "SetData")
   local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
       CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
@@ -958,7 +914,6 @@ end
 
 function DataMsg:Initialize(debug) 
   self.debug = debug
-  self:DefineIdMapping()
   self:InitMsgHandler() 
 end
 
@@ -966,16 +921,42 @@ end
 --[[ ----- End of DataMsg ----- ]]
 --[[ -------------------------- ]]
 
+function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forceSyncFlag )
+  if not LibGroupBroadcast then return end
+
+  if IsBool(forceSyncFlag) then 
+    self.synchronized = forceSyncFlag
+  end
+
+  if sendImmediately then 
+    self:SendData(rawNumEquipList) 
+    return
+  end
+
+  if self.queueId then 
+    zo_removeCallLater( self.queueId)
+    if libDebug and self.debug then debugMsg("BM", "reset queue") end 
+  else 
+    if libDebug and self.debug then debugMsg("BM", "start queue") end
+  end
+  self.queueId = zo_callLater( function() 
+    if libDebug and self.debug then debugMsg("BM", "end queue") end
+    self:SendData(rawNumEquipList) 
+    self.queueId = nil 
+  end, self.queueDuration) 
+
+end
+
 
 function BroadcastManager:SendData(rawNumEquipList) 
-  if not LibGroupBroadcast then return end
   DataMsg:SendData(rawNumEquipList)
   self.synchronized = true
 end
 
 
 function BroadcastManager:Initialize() 
-  self.debug = false
+  self.debug = true
+  self.queueDuration = 3000
   self.synchronized = false 
   DataMsg:Initialize( self.debug ) 
 end
@@ -994,7 +975,7 @@ function SlotManager:Initialize()
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
   end
-  self.queueDuration = 3000 
+  self.queueDuration = 1000 
 end
 
 
@@ -1071,7 +1052,7 @@ function SlotManager:RelayData()
   end 
 
   rawNumEquipList = self:ApplySpecialCases(rawNumEquipList) 
-  
+
   if libDebug and self.debug then 
     debugMsg("SM", "relay data")
     d( ExtendNumEquipData(rawNumEquipList) )
@@ -1079,7 +1060,7 @@ function SlotManager:RelayData()
   end
 
   PlayerSets:UpdateData( rawNumEquipList, "player" ) 
-  BroadcastManager:SendData( rawNumEquipList ) 
+  BroadcastManager:QueueBroadcast( rawNumEquipList ) 
 end
 
 
@@ -1102,6 +1083,71 @@ local function OnInitialPlayerActivated()
   SlotManager:UpdateLoadout() 
 end
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------- %% ]]
+--[[ %% -- Lookup Tables -- %% ]]
+--[[ %% ------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+function LookupTables:DefineSetIdMapping() 
+  local mysticalList = {}
+  local twoBoniSets = {} 
+  for ii = 0, 2047 do 
+    local maxEquip = GetMaxEquip( ii )
+    if maxEquip == 1 then table.insert(mysticalList, ii) end
+    if maxEquip == 2 then table.insert(twoBoniSets, ii) end 
+  end 
+
+  -- filter two boni into undaunted and abilityAltering 
+  -- based on the fact that all abilityAltering sets have a perfected and normal version 
+  local twoBoniSetsInverted = InvertTable(twoBoniSets)
+  local abilityAlteringList = {}
+  for setId, key in pairs( twoBoniSetsInverted ) do 
+    local unperfSetId = GetItemSetUnperfectedSetId(setId)
+    if unperfSetId ~= 0 then 
+      table.insert( abilityAlteringList, unperfSetId )
+      table.insert( abilityAlteringList, setId) 
+      twoBoniSetsInverted[unperfSetId] = nil 
+      twoBoniSetsInverted[setId] = nil
+    end
+  end
+
+  self.internalId = {}
+  self.internalId["mystical"] = InvertTable(mysticalList)  
+  self.internalId["undaunted"] = twoBoniSetsInverted
+  self.internalId["weapon"] = InvertTable(abilityAlteringList)
+
+  self.externalId = {}
+  self.externalId["mystical"] = mysticalList 
+  self.externalId["undaunted"] = InvertTable(twoBoniSetsInverted)
+  self.externalId["weapon"] = abilityAlteringList
+end
+
+
+function LookupTables:ExternalToInternalId(category, externalId)
+  return self.internalId[category][externalId]
+end
+
+
+function LookupTables:InternalToExternalId(category, internalId)
+  return self.externalId[category][internalId]
+end
+
+
+function LookupTables:GetSetType( setId )  
+  if self:ExternalToInternalId("mystical", setId) then return LSD_SET_TYPE_MYSTICAL 
+  elseif self:ExternalToInternalId("undaunted", setId) then return LSD_SET_TYPE_UNDAUNTED
+  elseif self:ExternalToInternalId("weapon", setId) then return LSD_SET_TYPE_WEAPON
+  else 
+    return LSD_SET_TYPE_NORMAL 
+  end
+end
+
+
+function LookupTables:Initialize() 
+  self:DefineSetIdMapping()
+end
+
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% -------------------- %% ]]
 --[[ %% -- Initialization -- %% ]]
@@ -1112,6 +1158,7 @@ local function Initialize()
 
   libDebug = ExoyDev and true or libDebug 
 
+  LookupTables:Initialize()
   CallbackManager:Initialize()
   GroupManager:Initialize()
   BroadcastManager:Initialize() 
@@ -1252,6 +1299,27 @@ function LibSetDetection.GetSetMaxEquip( setId )
 end
 
 
+--- Set Type 
+function LibSetDetection.GetSetType( setId ) 
+  return LookupTables:GetSetType( ConvertToUnperfected(setId) ) 
+end
+
+local function IsSpecificSetType( setType, setId )
+  return LookupTables:GetSetType( ConvertToUnperfected(setId) )  == setType 
+end
+
+function LibSetDetection.IsSetMystical( setId ) 
+  return IsSpecificSetType( LSD_SET_TYPE_MYSTICAL, ConvertToUnperfected(setId) ) 
+end
+
+function LibSetDetection.IsSetUndaunted( setId ) 
+  return IsSpecificSetType( LSD_SET_TYPE_UNDAUNTED, ConvertToUnperfected(setId) ) 
+end
+
+function LibSetDetection.IsSetAbilityAltering( setId ) 
+  return IsSpecificSetType( LSD_SET_TYPE_WEAPON, ConvertToUnperfected(setId) ) 
+end
+
 --[[ ----------------------------- ]]
 --[[ -- Backwards Compatibility -- ]]
 --[[ -- for function used in V3 -- ]] 
@@ -1363,6 +1431,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
       elseif param[1] == "groupmap" then 
         debugMsg("Dev", "GroupMap") 
         d(GroupManager.groupMap)
+      elseif param[1] == "lookup" then 
+        debugMsg("Dev", "LookupTables") 
+        d(LookupTables)
       end
     else 
       d("[LibSetDetection] command unknown")
