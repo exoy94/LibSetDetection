@@ -130,13 +130,13 @@ local activeTypes = {
 LSD_SET_TYPE_NORMAL = 0 
 LSD_SET_TYPE_MYSTICAL = 1 
 LSD_SET_TYPE_UNDAUNTED = 2 
-LSD_SET_TYPE_WEAPON = 3
+LSD_SET_TYPE_ABILITY_ALTERING = 3
 
 local setTypes = {
   [LSD_SET_TYPE_NORMAL] = "normal", 
   [LSD_SET_TYPE_MYSTICAL] = "mystical", 
   [LSD_SET_TYPE_UNDAUNTED] = "undaunted", 
-  [LSD_SET_TYPE_WEAPON] = "weapon", 
+  [LSD_SET_TYPE_ABILITY_ALTERING] = "weapon", 
 }
 
 --[[ --------------------- ]]
@@ -805,7 +805,7 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
         id=LUT:ExternalToInternalId("undaunted", setId), 
         body = setData.body
       })
-    elseif setType == LSD_SET_TYPE_WEAPON then 
+    elseif setType == LSD_SET_TYPE_ABILITY_ALTERING then 
       table.insert( formattedData["WeaponSets"], {
         id = LUT:ExternalToInternalId("weapon", setId),
         front = setData.front,
@@ -1137,7 +1137,7 @@ end
 function LookupTables:GetSetType( setId )  
   if self:ExternalToInternalId("mystical", setId) then return LSD_SET_TYPE_MYSTICAL 
   elseif self:ExternalToInternalId("undaunted", setId) then return LSD_SET_TYPE_UNDAUNTED
-  elseif self:ExternalToInternalId("weapon", setId) then return LSD_SET_TYPE_WEAPON
+  elseif self:ExternalToInternalId("weapon", setId) then return LSD_SET_TYPE_ABILITY_ALTERING
   else 
     return LSD_SET_TYPE_NORMAL 
   end
@@ -1317,7 +1317,7 @@ function LibSetDetection.IsSetUndaunted( setId )
 end
 
 function LibSetDetection.IsSetAbilityAltering( setId ) 
-  return IsSpecificSetType( LSD_SET_TYPE_WEAPON, ConvertToUnperfected(setId) ) 
+  return IsSpecificSetType( LSD_SET_TYPE_ABILITY_ALTERING, ConvertToUnperfected(setId) ) 
 end
 
 --[[ ----------------------------- ]]
