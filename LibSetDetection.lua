@@ -871,7 +871,6 @@ function DataMsg:SendData( rawNumEquipList )
   local data = self:SerilizeData( rawNumEquipList, requestSync ) 
   if libDebug and self.debug then 
     debugMsg("BM", zo_strformat("sending data; requestSync = <<1>>", requestSync and "true" or "false") )
-    d(data)
   end
   self.protocol:Send( data ) 
 end
@@ -1115,13 +1114,13 @@ function LookupTables:DefineSetIdMapping()
 
   self.internalId = {}
   self.internalId["mystical"] = InvertTable(mysticalList)  
-  self.internalId["undaunted"] =  InvertTable(twoBoniSetsInverted)
-  self.internalId["weapon"] = abilityAlteringList
+  self.internalId["undaunted"] = twoBoniSetsInverted
+  self.internalId["weapon"] = InvertTable(abilityAlteringList)
 
   self.externalId = {}
   self.externalId["mystical"] = mysticalList 
-  self.externalId["undaunted"] = twoBoniSetsInverted
-  self.externalId["weapon"] = InvertTable(abilityAlteringList)
+  self.externalId["undaunted"] = InvertTable(twoBoniSetsInverted)
+  self.externalId["weapon"] = abilityAlteringList
 end
 
 
@@ -1310,15 +1309,15 @@ local function IsSpecificSetType( setType, setId )
 end
 
 function LibSetDetection.IsSetMystical( setId ) 
-  return IsSpecificSetType( ConvertToUnperfected(setId), LSD_SET_TYPE_MYSTICAL) 
+  return IsSpecificSetType( LSD_SET_TYPE_MYSTICAL, ConvertToUnperfected(setId) ) 
 end
 
 function LibSetDetection.IsSetUndaunted( setId ) 
-  return IsSpecificSetType( ConvertToUnperfected(setId), LSD_SET_TYPE_UNDAUNTED) 
+  return IsSpecificSetType( LSD_SET_TYPE_UNDAUNTED, ConvertToUnperfected(setId) ) 
 end
 
 function LibSetDetection.IsSetAbilityAltering( setId ) 
-  return IsSpecificSetType( ConvertToUnperfected(setId), LSD_SET_TYPE_WEAPON) 
+  return IsSpecificSetType( LSD_SET_TYPE_WEAPON, ConvertToUnperfected(setId) ) 
 end
 
 --[[ ----------------------------- ]]
