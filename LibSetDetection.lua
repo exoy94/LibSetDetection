@@ -807,7 +807,7 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
       })
     elseif setType == LSD_SET_TYPE_WEAPON then 
       table.insert( formattedData["WeaponSets"], {
-        id = LUT:ExternalToInternal("weapon", setId),
+        id = LUT:ExternalToInternalId("weapon", setId),
         front = setData.front,
         back = setData.back
       })
