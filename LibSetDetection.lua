@@ -637,7 +637,7 @@ function SetManager:FireCallbacks( changeList )
     self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
   if self.unitTag == "player" and GroupManager.isGrouped then 
     CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, LSD_UNIT_TYPE_GROUP, nil, 
-    self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
+    GetLocalPlayerGroupUnitTag(), self.localPlayer, self.numEquipList, self.activeList)
   end
 end
 
@@ -859,7 +859,7 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
       if libDebug and self.debug then 
         debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
       end
-      BroadcastManager.QueueBroadcast( PlayerSets.numEquipList, false, true )
+      BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, false, true )
     end
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
   end
