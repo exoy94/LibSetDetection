@@ -1353,14 +1353,29 @@ end
 --[[ -- Chat Command  -- ]]
 --[[ ------------------- ]]
 
-SLASH_COMMANDS["/lsd"] = function( input ) 
+local cmdList = {
+  ["equipped"] = "list of the equipped set-pieces for each equipment slot",
+  ["setid"] = "input: *search string* - list of setIds, that include the provided search string",
+  ["setname"] = "input: *setId* - outputs the localized name of the set with the provided id",
+  ["debug"] = "list of debug state for library modules",
+}
 
-  local cmdList = {
-    ["equip"] = "output list of equipped sets",
-    ["setid"] = "outputs id of all sets, that include search string",
-    ["debug"] = "toggles global debug variable"
+local function ColorString(str, colorName) 
+  local colorList = {
+    ["green"] = "00ff00",  
+    ["orange"] = "ff8800", 
+    ["cyan"] = "00ffff", 
   }
+  local colorHex = colorList[colorName]
+  if colorHex then 
+    return string.format( "|c%s%s|r", colorHex, str)
+  else
+    return str 
+  end
+end
 
+
+SLASH_COMMANDS["/lsd"] = function( input ) 
   ---deserializ input 
   input = string.lower(input) 
   local param = {}
@@ -1376,18 +1391,19 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d( zo_strformat("<<1>> - <<2>>", cmdName, cmdInfo) )
     end
     d("--------------------")
-  elseif cmd == "equip" then 
+  elseif cmd == "equipped" then 
     local OutputSets = function(slotCategory) 
-      d("--- "..slotCategory.." --- ")
+      d("--- "..ColorString(slotCategory, "cyan").." --- ")
       for slotId, slotName in pairs( slotList[string.lower(slotCategory)] ) do 
         local setId = GetSetId( slotId )
-        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, GetSetName(setId) , setId ) )
+        d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, ColorString(GetSetName(setId), "orange") , setId ) )
       end  
     end
-    d("[LibSetDetection] equipped sets:")
-    OutputSets("Body") 
-    OutputSets("Front") 
-    OutputSets("Back")
+    d( zo_strformat("[<<1>>] equipped sets:", ColorString("LibSetDetection", "green") ))
+    --d("["..ColorString("LibSetDetection", "green").."] equipped sets:")
+    OutputSets( "Body" )  
+    OutputSets( "Front" ) 
+    OutputSets( "Back" )
     d("--------------------")
   elseif cmd == "setid" then
     if IsString(param[1]) and param[1] ~= "" then 
@@ -1438,6 +1454,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
       elseif param[1] == "lookup" then 
         debugMsg("Dev", "LookupTables") 
         d(LookupTables)
+      elseif param[1] == "test" then 
+        d( ColorString("asd", "green"))
       end
     else 
       d("[LibSetDetection] command unknown")
