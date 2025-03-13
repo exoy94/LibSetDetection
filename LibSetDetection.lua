@@ -1422,12 +1422,12 @@ SLASH_COMMANDS["/lsd"] = function( input )
     if IsNumber(setId) then  
       local setName = GetSetName(setId) 
       if setName == "" then 
-        d(zo_strformat("[LibSetDetection] no set name found for id=<<1>>", setId))
+        d( zo_strformat("[<<1>>] no set name found for id=<<2>>", ColorString("LibSetDetection", "green"), setId) ) 
       else 
-        d(zo_strformat("[LibSetDetection] <<1>> (<<2>>)", GetSetName(setId), setId))
+        d( zo_strformat("[<<1>>] <<1>> (<<2>>)", ColorString("LibSetDetection", "green"), GetSetName(setId), setId) ) 
       end
     else 
-      d("[LibSetDetection] incorrect input for setName search")
+      d( zo_strformat("[<<1>>] incorrect input for setName search", ColorString("LibSetDetection", "green") ))
     end
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
