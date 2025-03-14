@@ -75,7 +75,6 @@ local function MergeTables(t1, t2)
 end
 
 
-
 --[[ ---------------------- ]]
 --[[ -- Global Variables -- ]]
 --[[ ---------------------- ]]
@@ -263,8 +262,22 @@ end
 --[[ -- Debug -- ]] 
 --[[ ----------- ]]
 
+local function ColorString(str, colorName) 
+  local colorList = {
+    ["green"] = "00ff00",  
+    ["orange"] = "ff8800", 
+    ["cyan"] = "00ffff", 
+  }
+  local colorHex = colorList[colorName]
+  if colorHex then 
+    return string.format( "|c%s%s|r", colorHex, str)
+  else
+    return str 
+  end
+end
+
 local function debugMsg(id, msg) 
-  d( zo_strformat("[<<1>> LSD - <<2>>] <<3>>", GetTimeString(), id, msg) )  
+  d( zo_strformat("[<<1>> <<2>> - <<3>>] <<4>>", GetTimeString(), ColorString("LSD", "green"), ColorString(id, "cyan"), msg) )  
 end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
@@ -685,6 +698,9 @@ function GroupManager:UpdateSetData( unitName, unitTag, data )
     self.groupSets[unitName]:UpdateData( data, unitTag ) 
   else 
     self.groupSets[unitName] = SetManager:New( LSD_UNIT_TYPE_GROUP )
+    if libDebug and self.debug then 
+      debugMsg("GM", zo_strformat("new data entry for <<1>>", ColorString(unitName, "green") ) ) 
+    end
     self.groupSets[unitName]:UpdateData( data, unitTag )
   end
 end
@@ -723,7 +739,7 @@ end
 
 
 function GroupManager:Initialize() 
-  self.debug = false
+  self.debug = true
   self.isGrouped = IsUnitGrouped("player") 
   if self.isGrouped then 
     self:UpdateGroupMap()
@@ -736,6 +752,9 @@ function GroupManager:Initialize()
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
     if isLocalPlayer then 
       GroupManager.isGrouped = true
+      if libDebug and self.debug then 
+        debugMsg("GM", zo_strformat("local player <<1>>", ColorString("joined group", "orange") ) ) 
+      end
       BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, true, false )   
     end
   end
@@ -743,8 +762,14 @@ function GroupManager:Initialize()
   local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
     if isLocalPlayer then 
       GroupManager.isGrouped = false 
+      if libDebug and self.debug then 
+        debugMsg("GM", zo_strformat("local player <<1>>", ColorString("left group", "orange") ) ) 
+      end
     else 
       local unitName = ConvertCharToUnitName(charName) 
+      if libDebug and self.debug and GroupManager.groupSets[unitName] then 
+        debugMsg("GM", zo_strformat("removed data of <<1>> because they <<3>>", ColorString(unitName, "green"), ColorString("left group", "orange") ) ) 
+      end 
       GroupManager.groupSets[unitName] = nil  
     end 
   end
@@ -755,7 +780,12 @@ function GroupManager:Initialize()
 
   local function OnGroupMemberConnectedStatus(_, unitTag, connected ) 
     local unitName = GetUnitName(unitTag) 
-    if not connected then GroupManager.groupSets[unitName] = nil end
+    if not connected then 
+      GroupManager.groupSets[unitName] = nil 
+      if libDebug and self.debug then 
+        debugMsg("GM", zo_strformat("removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("logged out", "orange") ) ) 
+      end
+    end
   end
 
   --- event registration 
@@ -970,7 +1000,7 @@ end
 
 
 function SlotManager:Initialize() 
-  self.debug = false
+  self.debug = true
   self.equippedGear = {} 
   for slotId, _ in pairs( equipSlotList ) do 
     self.equippedGear[slotId] = 0 
@@ -1064,25 +1094,6 @@ function SlotManager:RelayData()
 end
 
 
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ---------------- %% ]]
---[[ %% -- ZOS Events -- %% ]]
---[[ %% ---------------- %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%% ]]
-
-local function OnSlotUpdate(_, _, slotId, _, _, _) 
-  SlotManager:UpdateSlot(slotId)
-end
-
-local function OnArmoryOperation() 
-  zo_callLater( function() SlotManager:UpdateLoadout() end, 1000)
-end
-
-local function OnInitialPlayerActivated() 
-  EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
-  SlotManager:UpdateLoadout() 
-end
-
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------- %% ]]
 --[[ %% -- Lookup Tables -- %% ]]
@@ -1148,6 +1159,39 @@ function LookupTables:Initialize()
   self:DefineSetIdMapping()
 end
 
+
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------- %% ]]
+--[[ %% -- ZOS Events -- %% ]]
+--[[ %% ---------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%% ]]
+
+local function OnInitialPlayerActivated() 
+  EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
+  SlotManager:UpdateLoadout() 
+end
+
+
+local function OnSlotUpdate(_, _, slotId, _, _, _) 
+  SlotManager:UpdateSlot(slotId)
+end
+
+
+local armorySetupChanged = false
+
+local function OnArmoryOperation() 
+  armorySetupChanged = true
+end
+
+local function OnPlayerModelRebuild() 
+  if armorySetupChanged then 
+    SlotManager:UpdateLoadout()
+    armorySetupChanged = false
+  end
+end 
+
+
+
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% -------------------- %% ]]
 --[[ %% -- Initialization -- %% ]]
@@ -1174,6 +1218,7 @@ local function Initialize()
   EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_INVENTORY_UPDATE_REASON , INVENTORY_UPDATE_REASON_DEFAULT)
   EM:RegisterForEvent( libName.."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED, OnInitialPlayerActivated )
   EM:RegisterForEvent( libName.."ArmoryChange", EVENT_ARMORY_BUILD_OPERATION_STARTED, OnArmoryOperation )
+  EM:RegisterForEvent( libName.."PlayerModelRebuild", EVENT_LOCAL_PLAYER_MODEL_REBUILT, OnPlayerModelRebuild) 
 end
 
 local function OnAddonLoaded(_, name) 
@@ -1360,19 +1405,7 @@ local cmdList = {
   ["debug"] = "list of debug states of library modules",
 }
 
-local function ColorString(str, colorName) 
-  local colorList = {
-    ["green"] = "00ff00",  
-    ["orange"] = "ff8800", 
-    ["cyan"] = "00ffff", 
-  }
-  local colorHex = colorList[colorName]
-  if colorHex then 
-    return string.format( "|c%s%s|r", colorHex, str)
-  else
-    return str 
-  end
-end
+
 
 
 SLASH_COMMANDS["/lsd"] = function( input ) 
@@ -1466,6 +1499,27 @@ SLASH_COMMANDS["/lsd"] = function( input )
         OutputSetData(unitTag)
         d( "--------------------------------------------------")
       end
+    end
+  elseif cmd == "groupsets" then
+    local groupSets = {} 
+    for _, unitTag in pairs(LibSetDetection.GetAvailableUnitTags()) do 
+      if unitTag ~= "player" then 
+        local unitSets = LibSetDetection.GetUnitSetData(unitTag)  
+        for setId, setData in pairs(unitSets) do 
+          if setData.activeType > 0 then 
+            groupSets[setId] = groupSets[setId] or {}
+            table.insert( groupSets[setId], unitTag)
+          end
+        end
+      end
+    end
+    d( zo_strformat("[<<1>>] all sets equipped in <<2>> ", ColorString("LibSetDetection", "green"), ColorString("group", "green") ) )
+    for setId, units in pairs(groupSets) do 
+      d( zo_strformat("[<<1>>] <<2>>:", setId, ColorString(GetSetName(setId), "orange") ) )
+      for key, unitTag in pairs(units) do 
+        d( zo_strformat("   <<1>>. <<2>> (<<3>>)", key, ColorString(GetUnitName(unitTag), "green"), ColorString(unitTag, "green") ) )   
+      end
+      d( "--------------------------------------------------")
     end
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
