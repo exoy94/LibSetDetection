@@ -903,7 +903,7 @@ end
 
 
 function DataMsg:InitMsgHandler() 
-  if not LibGroupBroadcast then return end
+  --if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
   local CreateArrayField = LGB.CreateArrayField
   local CreateTableField = LGB.CreateTableField 
@@ -947,7 +947,7 @@ end
 --[[ -------------------------- ]]
 
 function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forceSyncFlag )
-  if not LibGroupBroadcast then return end
+  --if not LibGroupBroadcast then return end
 
   if IsBool(forceSyncFlag) then 
     self.synchronized = forceSyncFlag

@@ -5,6 +5,6 @@
 ## Author: @|c00FF00ExoY|r94 (PC/EU)
 ## IsLibrary: true
 ## Description: Provides data about the equipped sets of the player and group members.
-## OptionalDependency: LibGroupBroadcast
+## Dependency: LibGroupBroadcast
 
 LibSetDetection.lua
