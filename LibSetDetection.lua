@@ -136,7 +136,7 @@ local setTypes = {
   [LSD_SET_TYPE_NORMAL] = "normal", 
   [LSD_SET_TYPE_MYSTICAL] = "mystical", 
   [LSD_SET_TYPE_UNDAUNTED] = "undaunted", 
-  [LSD_SET_TYPE_ABILITY_ALTERING] = "weapon", 
+  [LSD_SET_TYPE_ABILITY_ALTERING] = "ability altering", 
 }
 
 --[[ --------------------- ]]
@@ -1355,9 +1355,9 @@ end
 
 local cmdList = {
   ["equipped"] = "list of the equipped set-pieces for each equipment slot",
-  ["setid"] = "input: *search string* - list of setIds, that include the provided search string",
-  ["setname"] = "input: *setId* - outputs the localized name of the set with the provided id",
-  ["debug"] = "list of debug state for library modules",
+  ["setid"] = "list of setIds, that include the provided search string (input: *search string*)",
+  ["setname"] = "outputs the localized name of the set with the provided id (input: *setId*)",
+  ["debug"] = "list of debug states of library modules",
 }
 
 local function ColorString(str, colorName) 
@@ -1386,9 +1386,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
   local cmd = table.remove(param, 1) 
   
   if not cmd or cmd == ""  then 
-    d("[LibSetDetection] - command overview")
+    d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "green"), "command overview") ) 
     for cmdName, cmdInfo in pairs( cmdList ) do 
-      d( zo_strformat("<<1>> - <<2>>", cmdName, cmdInfo) )
+      d( zo_strformat("<<1>> - <<2>>", ColorString(cmdName, "cyan"), cmdInfo) )
     end
     d("--------------------")
   elseif cmd == "equipped" then 
@@ -1400,72 +1400,100 @@ SLASH_COMMANDS["/lsd"] = function( input )
       end  
     end
     d( zo_strformat("[<<1>>] equipped sets:", ColorString("LibSetDetection", "green") ))
-    --d("["..ColorString("LibSetDetection", "green").."] equipped sets:")
     OutputSets( "Body" )  
     OutputSets( "Front" ) 
     OutputSets( "Back" )
     d("--------------------")
   elseif cmd == "setid" then
     if IsString(param[1]) and param[1] ~= "" then 
-      d("[LibSetDetection] matching set ids:")
-      for i=0,1023,1 do 
-        local setName = GetSetName(i)
+      d( zo_strformat("[<<1>>] searching for sets with '<<2>>'...", ColorString("LibSetDetection", "green"), ColorString(param[1], "cyan") ) )
+      local foundMatch = false
+      for ii=0,1023,1 do 
+        local setName = GetSetName(ii)
         if string.find( string.lower(setName), string.lower(param[1]) ) then 
-          d( zo_strformat("<<1>> - <<2>>", i, setName))
+          d( zo_strformat("(<<1>>) - <<2>>", ii, ColorString(setName, "orange") ) )
+          foundMatch = true
         end
       end
+      if not foundMatch then 
+        d( ColorString("no match found", "cyan")  )
+      end
     else 
-      d("[LibSetDetection] incorrect input for setId search")
+      d( zo_strformat("[<<1>>] invalid input for search", ColorString("LibSetDetection", "cyan") ))
     end
   elseif cmd == "setname" then 
     local setId = tonumber(param[1])
     if IsNumber(setId) then  
       local setName = GetSetName(setId) 
       if setName == "" then 
-        d( zo_strformat("[<<1>>] no set name found for id=<<2>>", ColorString("LibSetDetection", "green"), setId) ) 
+        d( zo_strformat("[<<1>>] no set name found for <<2>> = <<3>>", ColorString("LibSetDetection", "green"), ColorString("setId", "cyan"), setId) ) 
       else 
-        d( zo_strformat("[<<1>>] <<1>> (<<2>>)", ColorString("LibSetDetection", "green"), GetSetName(setId), setId) ) 
+        d( zo_strformat("[<<1>>] <<2>> (<<3>>)", ColorString("LibSetDetection", "green"), ColorString(GetSetName(setId), "orange"), setId) ) 
       end
     else 
-      d( zo_strformat("[<<1>>] incorrect input for setName search", ColorString("LibSetDetection", "green") ))
+      d( zo_strformat("[<<1>>] invalid input for search", ColorString("LibSetDetection", "green") ))
+    end
+  elseif cmd == "setdata" then
+    local function OutputSetData(unitTag)
+      local setData = LibSetDetection.GetUnitSetData(unitTag) 
+      --d( ColorString(zo_strformat("<<1>> (<<2>>):", GetUnitName(unitTag), unitTag), "green")) 
+      local numEquip = {0,0,0}
+      for setId, setInfo in pairs(setData) do
+        numEquip[1] = numEquip[1] + setInfo.numEquip.body
+        numEquip[2] = numEquip[2] + setInfo.numEquip.front 
+        numEquip[3] = numEquip[3] + setInfo.numEquip.back
+        local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(setInfo.setName, "orange")  )  
+        local setTypeStr = zo_strformat("setType = <<1>>", ColorString(setTypes[LibSetDetection.GetSetType(setId)], "orange") ) 
+        local activeTypeStr = zo_strformat("activeType = <<1>>", ColorString(activeTypes[setInfo.activeType], "orange") ) 
+        local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(setInfo.numEquip.body), "orange"), ColorString(tostring(setInfo.numEquip.front), "orange"), ColorString(tostring(setInfo.numEquip.back), "orange"))
+        d( zo_strformat("<<1>> || <<2>> || <<3>> || <<4>>", setStr, setTypeStr, activeTypeStr, numEquipStr ) )
+      end
+      d( zo_strformat("<<1>>: <<2>>/10 (body); <<3>>/2 (front) <<4>>/2 (back)", ColorString("Total Equipped", "cyan"), numEquip[1], numEquip[2], numEquip[3]) )
+    end
+    
+    if IsString(param[1]) and param[1] ~= "" then 
+      if LibSetDetection.AreUnitDataAvailable(param[1]) then 
+        d( zo_strformat("[<<1>>] setdata for <<2>> (<<3>>)", ColorString("LibSetDetection", "green"), ColorString(GetUnitName(param[1]), "green"), ColorString(param[1], "green") ))
+        OutputSetData(param[1])  
+      else 
+        d( zo_strformat("[<<1>>] invalid input for setdata", ColorString("LibSetDetection", "green") ))
+      end    
+    else 
+      d( zo_strformat("[<<1>>] setdata for <<2>> ", ColorString("LibSetDetection", "green"), ColorString("all units", "green") ))
+      local unitList = LibSetDetection.GetAvailableUnitTags() 
+      for _, unitTag in ipairs(unitList) do 
+        d( zo_strformat("Unit: <<1>> (<<2>>)", ColorString(GetUnitName(unitTag), "green"), ColorString(unitTag, "green") ) )  
+        OutputSetData(unitTag)
+        d( "--------------------------------------------------")
+      end
     end
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
       libDebug = not libDebug 
-      d( zo_strformat("[LibsetDetection] Debug switched > <<1>> <", libDebug and "on" or "off"))
+      d( zo_strformat("[<<1>>] Library debug state switched: <<2>>", ColorString("LibSetDetection", "green"), ColorString(libDebug and "on" or "off", "orange") ) )
     else 
-      d("[LibSetDetection - Debug] lib: "..tostring(libDebug))
-      d("BroadcastManager: "..tostring(BroadcastManager.debug))
-      d("CallbackManager: "..tostring(CallbackManager.debug))
-      d("GroupManager: "..tostring(GroupManager.debug))
-      d("SetManager - Player: "..tostring(PlayerSets.debug))
-      d("SetManager - Group: "..tostring(EmptySetManager.debug))
-      d("SlotManager: "..tostring(SlotManager.debug))
+      d( zo_strformat("[<<1>>] Library debug state: <<2>>", ColorString("LibSetDetection", "green"), ColorString(tostring(libDebug), "orange") ) )  
+      d( zo_strformat("<<1>>: <<2>>", ColorString("BroadcastManager", "cyan"), ColorString(tostring(BroadcastManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("CallbackManager", "cyan"), ColorString(tostring(CallbackManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("GroupManager", "cyan"), ColorString(tostring(GroupManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Player", "cyan"), ColorString(tostring(PlayerSets.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Group", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SlotManager", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
     end
   else 
-    if cmd == "dev" and ExoyDev then 
-      --- call development functions 
+    if cmd == "dev" and libDebug then 
       if param[1] == "registry" then 
         debugMsg("Dev", "Registry")
         d(CallbackManager.registry)
       elseif param[1] == "groupmap" then 
         debugMsg("Dev", "GroupMap") 
         d(GroupManager.groupMap)
-      elseif param[1] == "lookup" then 
-        debugMsg("Dev", "LookupTables") 
-        d(LookupTables)
-      elseif param[1] == "test" then 
-        d( ColorString("asd", "green"))
       end
     else 
       d("[LibSetDetection] command unknown")
     end
   end
-
 end
 
 
---[[ --------------------------- ]]
---[[ -- Development Functions -- ]]
---[[ --------------------------- ]]
 
