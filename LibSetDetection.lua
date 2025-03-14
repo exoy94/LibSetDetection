@@ -874,21 +874,17 @@ end
 
 
 function DataMsg:OnIncomingMsg(unitTag, rawData) 
-  local unitName = GetUnitName(unitTag) -- who send information 
+  local unitName = GetUnitName(unitTag)
   if unitName == playerName then 
     if libDebug and self.debug then 
-      debugMsg("BM","Received Data from player" ) 
+      debugMsg("BM", zo_strformat("Received broadcast from local player - <<1>>", ColorString("transmission verified", "orange") ) )  
     end
   else 
-    if libDebug and self.debug then 
-      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>)", unitName, unitTag ) )
-    end
-
     local data, requestSync = self:DeserilizeData(rawData)
+    if libDebug and self.debug then 
+      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>) <<3>>", ColorString(unitName, "green"), ColorString(unitTag, "green"), requestSync and ColorString("sync requested", "orange") ) )
+    end    
     if requestSync then 
-      if libDebug and self.debug then 
-        debugMsg("BM", zo_strformat("Sync requested by <<1>> (<<2>>)", unitName, unitTag))
-      end
       BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, false, true )
     end
     GroupManager:UpdateSetData( unitName, unitTag, data ) 
@@ -900,7 +896,7 @@ function DataMsg:SendData( rawNumEquipList )
   local requestSync = not BroadcastManager.synchronized
   local data = self:SerilizeData( rawNumEquipList, requestSync ) 
   if libDebug and self.debug then 
-    debugMsg("BM", zo_strformat("sending data; requestSync = <<1>>", requestSync and "true" or "false") )
+    debugMsg("BM", zo_strformat("Sending <<1>> of <<2>>; requestSync = <<3>>",ColorString("SetData", "orange"), ColorString("local player", "green"), ColorString(requestSync and "true" or "false", "orange") ) ) 
   end
   self.protocol:Send( data ) 
 end
@@ -941,7 +937,6 @@ function DataMsg:InitMsgHandler()
   self.protocol:Finalize()
 end
 
-
 function DataMsg:Initialize(debug) 
   self.debug = debug
   self:InitMsgHandler() 
@@ -965,12 +960,12 @@ function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forc
 
   if self.queueId then 
     zo_removeCallLater( self.queueId)
-    if libDebug and self.debug then debugMsg("BM", "reset queue") end 
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("reset queue", "orange") ) ) end 
   else 
-    if libDebug and self.debug then debugMsg("BM", "start queue") end
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("start queue", "orange") ) ) end
   end
   self.queueId = zo_callLater( function() 
-    if libDebug and self.debug then debugMsg("BM", "end queue") end
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("execute queue", "orange") ) ) end
     self:SendData(rawNumEquipList) 
     self.queueId = nil 
   end, self.queueDuration) 
@@ -1401,7 +1396,9 @@ end
 local cmdList = {
   ["equipped"] = "list of the equipped set-pieces for each equipment slot",
   ["setid"] = "list of setIds, that include the provided search string (input: *search string*)",
-  ["setname"] = "outputs the localized name of the set with the provided id (input: *setId*)",
+  ["setname"] = "localized name of the set with the provided id (input: *setId*)",
+  ["setdata"] = "overview of equipped set for all available units (optional input: *uniTag* - only output for specific unit)",
+  ["groupsets"] = "overview of all known sets equipped in group with corresponding member",
   ["debug"] = "list of debug states of library modules",
 }
 
