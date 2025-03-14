@@ -459,11 +459,8 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
     --- debug
     if libDebug and self.debug then 
       local p = {...}
-      local msgPartOne = zo_strformat( "<<1>> for <<2>> (<<3>> - <<4>>): ", 
-        eventName, GetUnitName(p[3]), p[3], p[4] and "local" or "remote" ) 
-      local msgPartTwo = zo_strformat("><<1>>< <<2>> (<<3>>) - Active: <<4>>", 
-        changeTypes[p[2]], GetSetName( p[1] ), p[1], p[5] )
-      debugMsg("CM-Fire", msgPartOne..msgPartTwo )
+      local eventDetails = zo_strformat("<<1>> (<<2>>) was <<3>>; new activeType: <<4>>", ColorString(GetSetName(p[1]),"orange"), p[1], ColorString(changeTypes[p[2]], "cyan"), ColorString(activeTypes[p[5]], "cyan") ) 
+      debugMsg("CM", zo_strformat("Fire Callback: <<1>> for <<2>> (<<3>> - <<4>>): <<5>>", ColorString(eventName, "orange"), ColorString(GetUnitName(p[3]), "green"), p[3], p[4] and "local" or "remote", eventDetails ) )
     end
   elseif eventId == LSD_EVENT_DATA_UPDATE then 
     -- parameter: unitTag, localPlayer, numEquipList, activeList
@@ -471,7 +468,7 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
     --- debug
     if libDebug and self.debug then 
       local p = {...} 
-      debugMsg("CM", zo_strformat("<<1>> for <<2>> (<<3>>)", eventName, GetUnitName(p[1]), p[1]) )
+      debugMsg("CM", zo_strformat("Fire Callback: <<1>> for <<2>> (<<3>> - <<4>>)", ColorString(eventName, "orange"), ColorString(GetUnitName(p[1]), "green"), p[1], p[2] and "local" or "remote" ) )
     end
   end
 end   --- End of "FireCallbacks"
@@ -488,10 +485,10 @@ SetManager.__index = SetManager
 function SetManager:New( unitType, unitName )
   local SM = setmetatable({}, SetManager) 
   if unitType == LSD_UNIT_TYPE_PLAYER then 
-    SM.debug = false
+    SM.debug = true
     SM.localPlayer = true
   elseif unitType == LSD_UNIT_TYPE_GROUP then 
-    SM.debug = false 
+    SM.debug = true
     SM.localPlayer = false
   end
   SM.unitType = unitType
@@ -569,7 +566,17 @@ function SetManager:ConvertDataToUnperfected()
       d("------------ End of conversionList")
     end
     debugMsg( self.debugHeader, "numEquipList")
-    d(ExtendNumEquipData(numEquipTemp) )
+    if ZO_IsTableEmpty(numEquipTemp) then 
+      d( zo_strformat("Relayed data: <<1>>", ColorString("empty loadout", "cyan")))
+    else 
+      for setId, numEquip in pairs(numEquipTemp) do 
+        local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange")  )  
+        local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(numEquip.body), "orange"), ColorString(tostring(numEquip.front), "orange"), ColorString(tostring(numEquip.back), "orange"))
+        d( zo_strformat("<<1>>: <<2>>", setStr, numEquipStr ) )
+      end
+    end
+
+    --d(ExtendNumEquipData(numEquipTemp) )
     d("------------ End of numEquipList")
   end
 end
@@ -637,7 +644,6 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
-  if libDebug and self.debug then debugMsg( self.debugHeader, "fire callbacks") end
   for setId, changeType in pairs( changeList ) do 
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
       setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
@@ -960,12 +966,12 @@ function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forc
 
   if self.queueId then 
     zo_removeCallLater( self.queueId)
-    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("reset queue", "orange") ) ) end 
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Broadcast Queue - <<1>>", ColorString("reset queue", "orange") ) ) end 
   else 
-    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("start queue", "orange") ) ) end
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Broadcast Queue - <<1>>", ColorString("start queue", "orange") ) ) end
   end
   self.queueId = zo_callLater( function() 
-    if libDebug and self.debug then debugMsg("BM", zo_strformat("Queue Broadcast - <<1>>", ColorString("execute queue", "orange") ) ) end
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("Broadcast Queue - <<1>>", ColorString("execute queue", "orange") ) ) end
     self:SendData(rawNumEquipList) 
     self.queueId = nil 
   end, self.queueDuration) 
@@ -1005,7 +1011,7 @@ end
 
 
 function SlotManager:UpdateLoadout() 
-  if libDebug and self.debug then debugMsg( "SM", "loadout update" ) end
+  if libDebug and self.debug then debugMsg( "SM", zo_strformat("Checking all equipment slots - <<1>>", ColorString("loadout update", "orange") ) ) end
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
@@ -1014,7 +1020,7 @@ end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  if libDebug and self.debug then debugMsg( "SM", "slot update "..equipSlotList[slotId] ) end 
+  if libDebug and self.debug then debugMsg( "SM", zo_strformat("Checking specific equipment slot - <<1>>", ColorString(equipSlotList[slotId].." update", "orange") ) )  end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
@@ -1040,12 +1046,12 @@ end
 function SlotManager:ResetQueue() 
   if self.queueId then 
     zo_removeCallLater( self.queueId )
-    if libDebug and self.debug then debugMsg("SM", "reset queue") end 
+    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("reset queue", "orange") ) ) end  
   else 
-    if libDebug and self.debug then debugMsg("SM", "start queue") end
+    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("start queue", "orange") ) ) end  
   end
   self.queueId = zo_callLater( function() 
-    if libDebug and self.debug then debugMsg("SM", "end queue") end
+    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("execute queue", "orange") ) ) end  
     self:RelayData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -1079,9 +1085,16 @@ function SlotManager:RelayData()
   rawNumEquipList = self:ApplySpecialCases(rawNumEquipList) 
 
   if libDebug and self.debug then 
-    debugMsg("SM", "relay data")
-    d( ExtendNumEquipData(rawNumEquipList) )
-    d("---------- end: relay data")
+    debugMsg("SM", zo_strformat("Relay data to <<1>> for <<2>> ", ColorString("SetManager", "orange"), ColorString("local player", "green") ) )
+    if ZO_IsTableEmpty(rawNumEquipList) then 
+      d( zo_strformat("Relayed data: <<1>>", ColorString("empty loadout", "cyan")))
+    else 
+      for setId, numEquip in pairs(rawNumEquipList) do 
+        local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange")  )  
+        local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(numEquip.body), "orange"), ColorString(tostring(numEquip.front), "orange"), ColorString(tostring(numEquip.back), "orange"))
+        d( zo_strformat("<<1>>: <<2>>", setStr, numEquipStr ) )
+      end
+    end
   end
 
   PlayerSets:UpdateData( rawNumEquipList, "player" ) 
