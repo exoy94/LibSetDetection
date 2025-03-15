@@ -1,10 +1,10 @@
 ## Title: LibSetDetection
 ## APIVersion: 101045
-## Version: 4.5
+## Version: 4.6
 ## AddOnVersion: 4
 ## Author: @|c00FF00ExoY|r94 (PC/EU)
 ## IsLibrary: true
 ## Description: Provides data about the equipped sets of the player and group members.
-## Dependency: LibGroupBroadcast
+## OptionalDependency: LibGroupBroadcast
 
 LibSetDetection.lua
