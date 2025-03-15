@@ -227,12 +227,14 @@ end
 
 local function GetSetName( setId ) 
   local _, setName = GetItemSetInfo( setId )
+  if setName == "" then setName = "Unknown Set" end
   return setName
 end 
 
 
 local function GetMaxEquip( setId )
   local _, _, _, _, _, maxEquipZos = GetItemSetInfo( setId ) 
+  if maxEquipZos == 0 then maxEquipZos = 15 end
   maxEquip = CheckException(setId, "maxEquip") or maxEquipZos
   return maxEquip, maxEquipZos
 end
@@ -459,7 +461,7 @@ function CallbackManager:FireCallbacks( eventId, unitType, setId, ... )
     --- debug
     if libDebug and self.debug then 
       local p = {...}
-      local eventDetails = zo_strformat("<<1>> (<<2>>) was <<3>>; new activeType: <<4>>", ColorString(GetSetName(p[1]),"orange"), p[1], ColorString(changeTypes[p[2]], "cyan"), ColorString(activeTypes[p[5]], "cyan") ) 
+      local eventDetails = zo_strformat("<<1>> (<<2>>) was <<3>> (active: <<4>>)", ColorString(GetSetName(p[1]),"orange"), p[1], ColorString(changeTypes[p[2]], "cyan"), ColorString(activeTypes[p[5]], "cyan") ) 
       debugMsg("CM", zo_strformat("Fire Callback: <<1>> for <<2>> (<<3>> - <<4>>): <<5>>", ColorString(eventName, "orange"), ColorString(GetUnitName(p[3]), "green"), p[3], p[4] and "local" or "remote", eventDetails ) )
     end
   elseif eventId == LSD_EVENT_DATA_UPDATE then 
@@ -501,7 +503,7 @@ end
 
 function SetManager:UpdateData( newRawData, unitTag )
   self.debugHeader = zo_strformat( "SM <<1>> (<<2>>)", GetUnitName(unitTag), unitTag )
-  if libDebug and self.debug then debugMsg( self.debugHeader, "update data" ) end
+  if libDebug and self.debug then debugMsg( self.debugHeader, "Received new data" ) end
   self.unitTag = unitTag -- ensures always correct unitTag
   self:InitTables( newRawData )  -- updates archive and resets current 
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
@@ -555,29 +557,15 @@ function SetManager:ConvertDataToUnperfected()
   self.numEquipList = numEquipTemp
   --- debug
   if libDebug and self.debug then 
+    debugMsg( self.debugHeader, "Conversion of perfected to normal setIds" )
     if ZO_IsTableEmpty(listOfPerfected) then 
-      d("no normal/perfected conversion occured")
+      d( ColorString("no conversion occured", "orange") ) 
     else 
-      d("conversionList:")
       for _, id in ipairs(listOfPerfected) do 
         local unperfId  = GetItemSetUnperfectedSetId(id)
-        d( zo_strformat("<<1>> --> <<2>> (<<3>>)", id, unperfId, GetSetName(unperfId) ) )
-      end
-      d("------------ End of conversionList")
-    end
-    debugMsg( self.debugHeader, "numEquipList")
-    if ZO_IsTableEmpty(numEquipTemp) then 
-      d( zo_strformat("Relayed data: <<1>>", ColorString("empty loadout", "cyan")))
-    else 
-      for setId, numEquip in pairs(numEquipTemp) do 
-        local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange")  )  
-        local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(numEquip.body), "orange"), ColorString(tostring(numEquip.front), "orange"), ColorString(tostring(numEquip.back), "orange"))
-        d( zo_strformat("<<1>>: <<2>>", setStr, numEquipStr ) )
+        d( zo_strformat("<<1>>: <<2>> --> <<3>>", ColorString(GetSetName(unperfId), "orange"), id, unperfId ) )
       end
     end
-
-    --d(ExtendNumEquipData(numEquipTemp) )
-    d("------------ End of numEquipList")
   end
 end
 
@@ -602,13 +590,18 @@ function SetManager:AnalyseData()
     self.activeList[setId] = activeType
   end
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "activeList") 
-    local activeListDecoded = {}
-    for setId, activeType in pairs(self.activeList) do 
-      activeListDecoded[setId] = activeTypes[activeType]
+    debugMsg( self.debugHeader, "Current set data after analysis")
+    if ZO_IsTableEmpty(self.numEquipList) then 
+      d( zo_strformat("<<1>>", ColorString("empty loadout", "cyan")))
+    else 
+      for setId, numEquip in pairs(self.numEquipList) do 
+        local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange")  )  
+        local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(numEquip.body), "orange"), ColorString(tostring(numEquip.front), "orange"), ColorString(tostring(numEquip.back), "orange"))
+        local setTypeStr = zo_strformat("setType = <<1>>", ColorString(setTypes[LibSetDetection.GetSetType(setId)], "orange") ) 
+        local activeTypeStr = zo_strformat("activeType = <<1>>", ColorString(activeTypes[self.activeList[setId]], "orange") ) 
+        d( zo_strformat("<<1>> || <<2>> || <<3>> || <<4>>", setStr, setTypeStr, activeTypeStr, numEquipStr ) )
+      end
     end
-    d( activeListDecoded)
-    d("------------ End of activeList")
   end
 end
 
@@ -631,13 +624,14 @@ function SetManager:DetermineChanges()
   end
 
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "changeList") 
-    local changeListDecoded = {}
-    for setId, changeType in pairs(changeList) do 
-      changeListDecoded[setId] = changeTypes[changeType]
+    debugMsg( self.debugHeader, "List of occured set changes:") 
+    if ZO_IsTableEmpty(changeList) then 
+      d( ColorString("no set changes occured", "orange"))
+    else 
+      for setId, changeType in pairs(changeList) do 
+        d( zo_strformat("[<<1>>] <<2>> was <<3>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange"), changeTypes[changeType] )  ) 
+      end
     end
-    d(changeListDecoded)
-    d("------------ End of changeList")
   end
   return changeList 
 end
@@ -657,6 +651,9 @@ function SetManager:FireCallbacks( changeList )
   if self.unitTag == "player" and GroupManager.isGrouped then 
     CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, LSD_UNIT_TYPE_GROUP, nil, 
     GetLocalPlayerGroupUnitTag(), self.localPlayer, self.numEquipList, self.activeList)
+  end
+  if libDebug and self.debug then 
+    d("--------------------------------------------------") 
   end
 end
 
@@ -705,7 +702,7 @@ function GroupManager:UpdateSetData( unitName, unitTag, data )
   else 
     self.groupSets[unitName] = SetManager:New( LSD_UNIT_TYPE_GROUP )
     if libDebug and self.debug then 
-      debugMsg("GM", zo_strformat("new data entry for <<1>>", ColorString(unitName, "green") ) ) 
+      debugMsg("GM", zo_strformat("New data entry for <<1>>", ColorString(unitName, "green") ) ) 
     end
     self.groupSets[unitName]:UpdateData( data, unitTag )
   end
@@ -759,7 +756,7 @@ function GroupManager:Initialize()
     if isLocalPlayer then 
       GroupManager.isGrouped = true
       if libDebug and self.debug then 
-        debugMsg("GM", zo_strformat("local player <<1>>", ColorString("joined group", "orange") ) ) 
+        debugMsg("GM", zo_strformat("Local player <<1>>", ColorString("joined group", "orange") ) ) 
       end
       BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, true, false )   
     end
@@ -769,12 +766,12 @@ function GroupManager:Initialize()
     if isLocalPlayer then 
       GroupManager.isGrouped = false 
       if libDebug and self.debug then 
-        debugMsg("GM", zo_strformat("local player <<1>>", ColorString("left group", "orange") ) ) 
+        debugMsg("GM", zo_strformat("Local player <<1>>", ColorString("left group", "orange") ) ) 
       end
     else 
       local unitName = ConvertCharToUnitName(charName) 
       if libDebug and self.debug and GroupManager.groupSets[unitName] then 
-        debugMsg("GM", zo_strformat("removed data of <<1>> because they <<3>>", ColorString(unitName, "green"), ColorString("left group", "orange") ) ) 
+        debugMsg("GM", zo_strformat("Removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("left group", "orange") ) ) 
       end 
       GroupManager.groupSets[unitName] = nil  
     end 
@@ -789,7 +786,7 @@ function GroupManager:Initialize()
     if not connected then 
       GroupManager.groupSets[unitName] = nil 
       if libDebug and self.debug then 
-        debugMsg("GM", zo_strformat("removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("logged out", "orange") ) ) 
+        debugMsg("GM", zo_strformat("Removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("logged out", "orange") ) ) 
       end
     end
   end
@@ -883,7 +880,8 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
   local unitName = GetUnitName(unitTag)
   if unitName == playerName then 
     if libDebug and self.debug then 
-      debugMsg("BM", zo_strformat("Received broadcast from local player - <<1>>", ColorString("transmission verified", "orange") ) )  
+      debugMsg("BM", zo_strformat("Received broadcast from local player - <<1>>", ColorString("transmission verified", "orange") ) )
+      d("--------------------------------------------------")  
     end
   else 
     local data, requestSync = self:DeserilizeData(rawData)
@@ -909,7 +907,7 @@ end
 
 
 function DataMsg:InitMsgHandler() 
-  --if not LibGroupBroadcast then return end
+  if not LibGroupBroadcast then return end
   local LGB = LibGroupBroadcast
   local CreateArrayField = LGB.CreateArrayField
   local CreateTableField = LGB.CreateTableField 
@@ -953,7 +951,7 @@ end
 --[[ -------------------------- ]]
 
 function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forceSyncFlag )
-  --if not LibGroupBroadcast then return end
+  if not LibGroupBroadcast then return end
 
   if IsBool(forceSyncFlag) then 
     self.synchronized = forceSyncFlag
@@ -995,7 +993,7 @@ end
 
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ------------------ %% ]]
---[[ %% -- Slot Handler -- %% ]]
+--[[ %% -- Slot Manager -- %% ]]
 --[[ %% ------------------ %% ]]
 --[[ %%%%%%%%%%%%%%%%%%%%%%%% ]] 
 
@@ -1011,7 +1009,7 @@ end
 
 
 function SlotManager:UpdateLoadout() 
-  if libDebug and self.debug then debugMsg( "SM", zo_strformat("Checking all equipment slots - <<1>>", ColorString("loadout update", "orange") ) ) end
+  if libDebug and self.debug then debugMsg( "Slot", zo_strformat("Checking all equipment slots - <<1>>", ColorString("loadout update", "orange") ) ) end
   for slotId, _ in pairs (equipSlotList) do 
     self:UpdateSetId( slotId ) 
   end
@@ -1020,7 +1018,7 @@ end
 
 
 function SlotManager:UpdateSlot( slotId ) 
-  if libDebug and self.debug then debugMsg( "SM", zo_strformat("Checking specific equipment slot - <<1>>", ColorString(equipSlotList[slotId].." update", "orange") ) )  end 
+  if libDebug and self.debug then debugMsg( "Slot", zo_strformat("Checking specific equipment slot - <<1>>", ColorString(equipSlotList[slotId].." update", "orange") ) )  end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
@@ -1046,12 +1044,12 @@ end
 function SlotManager:ResetQueue() 
   if self.queueId then 
     zo_removeCallLater( self.queueId )
-    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("reset queue", "orange") ) ) end  
+    if libDebug and self.debug then debugMsg("Slot", zo_strformat("DataRelay Queue - <<1>>", ColorString("reset queue", "orange") ) ) end  
   else 
-    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("start queue", "orange") ) ) end  
+    if libDebug and self.debug then debugMsg("Slot", zo_strformat("DataRelay Queue - <<1>>", ColorString("start queue", "orange") ) ) end  
   end
   self.queueId = zo_callLater( function() 
-    if libDebug and self.debug then debugMsg("SM", zo_strformat("DataRelay Queue - <<1>>", ColorString("execute queue", "orange") ) ) end  
+    if libDebug and self.debug then debugMsg("Slot", zo_strformat("DataRelay Queue - <<1>>", ColorString("execute queue", "orange") ) ) end  
     self:RelayData()
     self.queueId = nil 
   end, self.queueDuration ) 
@@ -1085,7 +1083,7 @@ function SlotManager:RelayData()
   rawNumEquipList = self:ApplySpecialCases(rawNumEquipList) 
 
   if libDebug and self.debug then 
-    debugMsg("SM", zo_strformat("Relay data to <<1>> for <<2>> ", ColorString("SetManager", "orange"), ColorString("local player", "green") ) )
+    debugMsg("Slot", zo_strformat("Relay data to <<1>> for <<2>> ", ColorString("SetManager", "orange"), ColorString("local player", "green") ) )
     if ZO_IsTableEmpty(rawNumEquipList) then 
       d( zo_strformat("Relayed data: <<1>>", ColorString("empty loadout", "cyan")))
     else 
