@@ -1206,7 +1206,9 @@ end
 
 local function Initialize() 
 
-  libDebug = ExoyDev and true or libDebug 
+  if ExoYsDevelopmentTool then 
+    libDebug = ExoYsDevelopmentTool.addonDebug[libName] 
+  end
 
   LookupTables:Initialize()
   CallbackManager:Initialize()
