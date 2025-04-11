@@ -605,34 +605,33 @@ function SetManager:AnalyseData()
 end
 
 
-function SetManager:DetermineChanges()
-  local activationList = {} 
-  local deactivationList = {} 
-  local updateList = {} 
-   
-  local changeList = {}
+function SetManager:DetermineChanges()  
+  local changeList = { [LSD_CHANGE_TYPE_DEACTIVATED] = {}, [LSD_CHANGE_TYPE_ACTIVATED] = {}, [LSD_CHANGE_TYPE_UPDATED] = {} } 
+  
   --- check if changes occured to currently equipped sets
   for setId, activeType in pairs( self.activeList ) do 
     local previousActiveType = self.archive.activeList[setId] or LSD_ACTIVE_TYPE_NONE
     if activeType ~= previousActiveType then -- only changes in activeType are of interest 
-      if activeType > 0 and previousActiveType == 0 then changeList[setId] = LSD_CHANGE_TYPE_ACTIVATED
-      elseif activeType > 0 then changeList[setId] = LSD_CHANGE_TYPE_UPDATED
-      elseif activeType == 0 then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED 
+      if activeType > 0 and previousActiveType == 0 then table.insert( changeList[LSD_CHANGE_TYPE_ACTIVATED], setId )
+      elseif activeType > 0 then table.insert( changeList[LSD_CHANGE_TYPE_UPDATED], setId ) --changeList[setId] = LSD_CHANGE_TYPE_UPDATED
+      elseif activeType == 0 then table.insert( changeList[LSD_CHANGE_TYPE_DEACTIVATED], setId )--changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED 
       end
     end
   end
   --- check if any previously equipped set was unequipped 
   for setId, previousActiveType in pairs(self.archive.activeList ) do 
-    if previousActiveType > 0 and not self.activeList[setId] then changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED end
+    if previousActiveType > 0 and not self.activeList[setId] then table.insert( changeList[LSD_CHANGE_TYPE_DEACTIVATED], setId ) end--changeList[setId] = LSD_CHANGE_TYPE_DEACTIVATED end
   end
 
   if libDebug and self.debug then 
-    debugMsg( self.debugHeader, "List of occured set changes:") 
-    if ZO_IsTableEmpty(changeList) then 
-      d( ColorString("no set changes occured", "orange"))
-    else 
-      for setId, changeType in pairs(changeList) do 
-        d( zo_strformat("[<<1>>] <<2>> was <<3>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange"), changeTypes[changeType] )  ) 
+    for changeType, setList in ipairs( changeList ) do 
+      if ZO_IsTableEmpty(setList) then 
+        debugMsg( self.debugHeader, zo_strformat("No set was <<1>>", ColorString(changeTypes[changeType], "orange" ) ) )
+      else 
+        debugMsg( self.debugHeader, zo_strformat("List of <<1>> sets:", ColorString(changeTypes[changeType], "orange" ) ) ) 
+        for _, setId in ipairs(setList) do 
+          d( zo_strformat("[<<1>>] <<2>> was <<3>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange"), changeTypes[changeType] )  )  
+        end
       end
     end
   end
@@ -641,13 +640,15 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
-  --- set change
-  for setId, changeType in pairs( changeList ) do 
-    CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
+  --- set change 
+  for changeType, setList in ipairs (changeList) do 
+    for _, setId in ipairs(setList) do 
+      CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
       setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
-    if self.unitTag == "player" and GroupManager.isGrouped then -- fire events with player group tag 
-      CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, LSD_UNIT_TYPE_GROUP, setId, 
-      setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
+      if self.unitTag == "player" and GroupManager.isGrouped then -- fire events with player group tag 
+        CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, LSD_UNIT_TYPE_GROUP, setId, 
+        setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
+      end  
     end
   end
   --- data update 
