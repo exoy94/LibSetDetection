@@ -95,11 +95,10 @@ LSD_CHANGE_TYPE_DEACTIVATED = 2
 LSD_CHANGE_TYPE_UPDATED = 3 
 
 local changeTypes = {
-  [LSD_CHANGE_TYPE_ACTIVATED] = "activated", 
   [LSD_CHANGE_TYPE_DEACTIVATED] = "deactivated", 
+  [LSD_CHANGE_TYPE_ACTIVATED] = "activated", 
   [LSD_CHANGE_TYPE_UPDATED] = "updated",
 }
-
 
 --- unitType
 LSD_UNIT_TYPE_PLAYER = 1 
@@ -606,7 +605,11 @@ function SetManager:AnalyseData()
 end
 
 
-function SetManager:DetermineChanges() 
+function SetManager:DetermineChanges()
+  local activationList = {} 
+  local deactivationList = {} 
+  local updateList = {} 
+   
   local changeList = {}
   --- check if changes occured to currently equipped sets
   for setId, activeType in pairs( self.activeList ) do 
@@ -638,14 +641,16 @@ end
 
 
 function SetManager:FireCallbacks( changeList ) 
+  --- set change
   for setId, changeType in pairs( changeList ) do 
     CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, self.unitType, setId, 
       setId, changeType, self.unitTag, self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
-    if self.unitTag == "player" and GroupManager.isGrouped then 
+    if self.unitTag == "player" and GroupManager.isGrouped then -- fire events with player group tag 
       CallbackManager:FireCallbacks( LSD_EVENT_SET_CHANGE, LSD_UNIT_TYPE_GROUP, setId, 
       setId, changeType, GetLocalPlayerGroupUnitTag(), self.localPlayer, self.activeList[setId] or LSD_ACTIVE_TYPE_NONE ) 
     end
   end
+  --- data update 
   CallbackManager:FireCallbacks( LSD_EVENT_DATA_UPDATE, self.unitType, nil, 
     self.unitTag, self.localPlayer, self.numEquipList, self.activeList)
   if self.unitTag == "player" and GroupManager.isGrouped then 
@@ -1207,7 +1212,7 @@ end
 local function Initialize() 
 
   if ExoYsDevelopmentTool then 
-    libDebug = ExoYsDevelopmentTool.addonDebug[libName] 
+    libDebug = ExoYsDevelopmentTool.devMode[libName] 
   end
 
   LookupTables:Initialize()
@@ -1545,7 +1550,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d( zo_strformat("<<1>>: <<2>>", ColorString("SlotManager", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
     end
   else 
-    if cmd == "dev" and libDebug then 
+    if cmd == "dev" then--and libDebug then 
       if param[1] == "registry" then 
         debugMsg("Dev", "Registry")
         d(CallbackManager.registry)
