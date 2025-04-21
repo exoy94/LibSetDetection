@@ -957,6 +957,7 @@ end
 --[[ -------------------------- ]]
 
 function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forceSyncFlag )
+  if not GroupManager.isGrouped then return end
   if not LibGroupBroadcast then return end
 
   if IsBool(forceSyncFlag) then 
@@ -964,6 +965,7 @@ function BroadcastManager:QueueBroadcast( rawNumEquipList, sendImmediately, forc
   end
 
   if sendImmediately then 
+    if libDebug and self.debug then debugMsg("BM", zo_strformat("<<1>> broadcast", ColorString("Immediate", "orange") ) ) end
     self:SendData(rawNumEquipList) 
     return
   end
