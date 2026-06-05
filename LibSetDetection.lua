@@ -1,7 +1,15 @@
 LibSetDetection = LibSetDetection or {}
 
+---@ToDo  
+-- local reference on LSD 
+-- remove constants from global table  
+-- menu addition 
+-- actual filter table 
+-- send own ingocnito state
+-- testing 
+
 local libName = "LibSetDetection"
-local libVersion = 4
+local libVersion = 5
 local libDebug = false 
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
@@ -11,6 +19,7 @@ local EM = GetEventManager()
 --[[ ----------------------- ]]
  
 local BroadcastManager = {} 
+local IncognitoFeature = {}   -- Provides the option to only broadcast user-defined sets to group members. 
 local CallbackManager = {}   
 local GroupManager = {}     
 local SetManager = {}        
@@ -79,6 +88,8 @@ end
 --[[ -- Global Variables -- ]]
 --[[ ---------------------- ]]
  
+
+
 --- eventId
 LSD_EVENT_SET_CHANGE = 1 
 LSD_EVENT_DATA_UPDATE = 2
@@ -186,7 +197,6 @@ local twoHanderList = {
 local exceptionList = {
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
-  []
 }
 
 
@@ -945,12 +955,6 @@ function DataMsg:InitMsgHandler()
   local CreateNumericField = LGB.CreateNumericField
   local CreateFlagField = LGB.CreateFlagField
   self.handler = LGB:RegisterHandler("LibSetDetection")
-
-  ---@WIP 
-  local settings =  {}
-  --ütable.insert( settings, {type="checkbox", name = "test", getFunc = function() return true end, setFunc = function() end} )
-  --self.handler:SetUserSettings( LibGroupBroadcast.UserSettings:New( settings ) ) 
-
   self.handler:SetDisplayName("Lib Set Detection")
   self.handler:SetDescription("Shares equipped set pieces with group members.")
   --- @ToDo include a boolean for "has filter", so you dont have an addon that says "this person has nothing equipped 
@@ -984,7 +988,7 @@ function DataMsg:InitMsgHandler()
   self.legacyProtocol:Finalize()
 
   --- currentProtocol 
-    self.protocol = self.handler:DeclareProtocol(41, "SetData (LibVersion 5)")
+  self.protocol = self.handler:DeclareProtocol(41, "SetData (LibVersion 5)")
   local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
       CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
       CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
@@ -1007,9 +1011,87 @@ function DataMsg:InitMsgHandler()
   self.protocol:AddField( CreateFlagField("requestSync") ) -- 1 bit 
   self.protocol:AddField( CreateFlagField("incognito") ) -- 1 bit 
   
+  ---@WIP - not working and dont understand why
+  self.protocol:SetDescription("hallo wordl")
+---@WIP - only works for protocol and when i prevent lgb to set internal to nil
+  local settings = self:GetProtocolMenu()
+  self.protocol:SetUserSettings( settings )  
+
   self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   self.protocol:Finalize()
 end
+
+
+function DataMsg:GetProtocolMenu() 
+  local IF = IncognitoFeature 
+  local options = {}
+
+  table.insert( options, {
+    type="checkbox", 
+    name = "...but only for specific Sets", 
+    tooltip = "OFF = Information about all Sets are send. \nON = Only information about sets specified in the exceptions below are send.",
+    getFunc = function() return IF.store.enabled end, 
+    setFunc = function(bool) 
+      IF.store.enabled = bool
+    end
+  })  
+  table.insert( options, {type="divider"})
+
+  for preset, presetData in pairs(IF.presets) do 
+    local tooltipStr = "WIP" -- "Automatically adds exceptions for all sets required by 'Hodor Reflexes' to work correctly. (Master Architect, War Maschine, Pillager, Saxleel)"
+    table.insert( options, {
+    disabled = function() return not IF.store.enabled end,  
+    type="checkbox", 
+    name = "Exception Preset: "..presetData.displayName, 
+    tooltip = tooltipStr, 
+    getFunc = function() return IF.store.presets[preset] end, 
+    setFunc = function(bool) 
+      IF.store.presets[preset] = bool 
+      IF:BuildFilterTable() 
+    end
+  })
+  end
+
+  table.insert( options, {
+    disabled = function() return not IF.store.enabled end, 
+    type="editbox", 
+    name = "Additional SetId Exceptions:", 
+    isMultiline = true, 
+    isExtraWide = true, 
+    width = "full",
+    getFunc = function() return table.concat(IF.store.exceptions, ",") end, 
+    setFunc = function(text) 
+      local function splitCSV(text) -- taken from undaunted
+        local fields = {}
+        text:gsub("([^,]+)", function(result)
+        result = tonumber(result)
+        fields[#fields+1] = result and math.floor(result) or nil
+        end)
+	      return fields
+      end
+      local formattedText = splitCSV(text) 
+      d(formattedText)
+      IF.store.exceptions = formattedText 
+      IF:BuildFilterTable() 
+    end
+  })
+
+  table.insert( options, {
+    disabled = function() return not IF.store.enabled end, 
+    type="button", 
+    name = "Print Exceptions To Chat", 
+    width = "half",
+    func = function()
+      IF:PrintExceptionsToChat()
+    end
+  })
+
+  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() 
+  settings:Initialize( options )  
+  return settings 
+end
+
+
 
 function DataMsg:Initialize(debug) 
   self.debug = debug
@@ -1237,6 +1319,73 @@ function LookupTables:Initialize()
   self:DefineSetIdMapping()
 end
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------------ %% ]]
+--[[ %% -- IncognitoFeature -- %% ]]
+--[[ %% ------------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+local ingocnitoPresets = {
+  ["hodor"] = {
+    displayName = "Hodor Reflexes", 
+    exceptions = {331, 332, 585, 649}, -- War Maschine, MasterArchitect, Saxhleel, Pillager 
+  }
+}
+
+function IncognitoFeature:Initialize() 
+  local defaults = {
+    enabled = false, 
+    exceptions = {}, 
+    presets = {}
+  }
+  for preset, _ in pairs(ingocnitoPresets) do 
+    defaults.presets[preset] = false
+
+  end
+
+  self.store = ZO_SavedVars:NewAccountWide("LibSetDetectionSavedVariables", 1, nil, defaults)
+  self.presets = ingocnitoPresets
+  self:BuildFilterTable() 
+end
+
+
+function IncognitoFeature:BuildFilterTable() 
+  local store = self.store
+  local filter = ZO_ShallowTableCopy( store.exceptions )
+  for preset, presetData in pairs(self.presets) do 
+    if store.presets[preset] then 
+      for _, setId in ipairs(presetData.exceptions) do 
+        filter[setId] = true
+      end
+    end
+  end
+  self.filter = filter  ---@ToDo rename 
+end
+
+
+function IncognitoFeature:PrintExceptionsToChat()
+  local function printTableOfSets( tab ) 
+      for _, setId in ipairs(tab) do 
+        d(zo_strformat("[<<1>>] <<2>>", setId, GetSetName(setId)))
+      end
+  end
+
+  local store = self.store  
+  for preset, presetData in pairs(self.presets) do 
+    if store.presets[preset] then 
+      d("Preset Exceptions for '"..presetData.displayName.."'")
+      printTableOfSets( presetData.exceptions ) 
+    end
+  end
+  if not ZO_IsTableEmpty(store.exceptions) then 
+    d("Custom Exceptions")
+    printTableOfSets( store.exceptions ) 
+  end
+end
+
+
+
+
 
 --[[ %%%%%%%%%%%%%%%%%%%%%% ]]
 --[[ %% ---------------- %% ]]
@@ -1277,11 +1426,8 @@ end
 --[[ %%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local function Initialize() 
-
-  if ExoYsDevelopmentTool then 
-    --libDebug = ExoYsDevelopmentTool.devMode[libName] 
-  end
-
+  
+  IncognitoFeature:Initialize() 
   LookupTables:Initialize()
   CallbackManager:Initialize()
   GroupManager:Initialize()
