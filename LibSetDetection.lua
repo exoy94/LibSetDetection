@@ -508,6 +508,7 @@ function SetManager:UpdateData( newRawData, unitTag )
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
   self:AnalyseData()  -- determines, which sets are active 
   local changeList = self:DetermineChanges()  -- determine, what has changed (un-)equip/ update
+  --- @ToDo here i can determine, if the changes only affect sets that are filtered
   self:FireCallbacks( changeList )  -- fire callbacks according to detected changes
 end
 
@@ -747,6 +748,11 @@ function GroupManager:AreUnitDataAvailable( unitTag )
 end
 
 
+
+
+
+
+
 function GroupManager:Initialize() 
   self.debug = true
   self.isGrouped = IsUnitGrouped("player") 
@@ -756,6 +762,9 @@ function GroupManager:Initialize()
   self.groupSets = {}
   self.groupMap = {}
   self.mapOutdated = true 
+
+  self.incognitoList = {}
+
 
   --- event callbacks
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
@@ -769,17 +778,19 @@ function GroupManager:Initialize()
   end
   
   local function OnGroupMemberLeft(_, charName, _, isLocalPlayer)
+    local GM = GroupManager
     if isLocalPlayer then 
-      GroupManager.isGrouped = false 
+      GM.isGrouped = false 
       if libDebug and self.debug then 
         debugMsg("GM", zo_strformat("Local player <<1>>", ColorString("left group", "orange") ) ) 
       end
     else 
       local unitName = ConvertCharToUnitName(charName) 
-      if libDebug and self.debug and GroupManager.groupSets[unitName] then 
+      if libDebug and self.debug and GM.groupSets[unitName] then 
         debugMsg("GM", zo_strformat("Removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("left group", "orange") ) ) 
       end 
-      GroupManager.groupSets[unitName] = nil  
+      GM.groupSets[unitName] = nil  
+      GM.incognitoList[unitName] = nil 
     end 
   end
   
@@ -830,6 +841,10 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
     ["UndauntedSets"] = {},  
   }
   for setId, setData in pairs( rawNumEquipList ) do 
+
+    ---@ToDo here a check for transmission filter
+    -- if set is to be ignored, set the entries to zero 
+
     local setType = LUT:GetSetType( setId ) 
     if setType == LSD_SET_TYPE_NORMAL then 
       table.insert(formattedData["NormalSets"], {
@@ -878,11 +893,11 @@ function DataMsg:DeserilizeData( rawData )
   for _, setData in ipairs(rawData.NormalSets) do 
     data[setData.id] = Template_SlotCategorySubtables( setData.body, setData.front, setData.back )
   end
-  return data, rawData.requestSync
+  return data
 end
 
 
-function DataMsg:OnIncomingMsg(unitTag, rawData) 
+function DataMsg:OnIncomingMsg( unitTag, rawData ) 
   local unitName = GetUnitName(unitTag)
   if unitName == playerName then 
     if libDebug and self.debug then 
@@ -890,16 +905,24 @@ function DataMsg:OnIncomingMsg(unitTag, rawData)
       d("--------------------------------------------------")  
     end
   else 
-    local data, requestSync = self:DeserilizeData(rawData)
+    local setData = self:DeserilizeData(rawData)
+    local requestSync = rawData.requestSync 
+    local incognito = rawData.incognito 
     if libDebug and self.debug then 
-      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>) <<3>>", ColorString(unitName, "green"), ColorString(unitTag, "green"), requestSync and ColorString("sync requested", "orange") ) )
+      local syncStr = requestSync and ColorString("- sync requested", "orange") or ""
+      local incogStr = incognito and ColorString("[incognito]", "orange") or ""
+      debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>) <<3>> <<4>>", ColorString(unitName, "green"), ColorString(unitTag, "green"), incogStr, syncStr ) )
     end    
+
     if requestSync then 
       BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, false, true )
     end
-    GroupManager:UpdateSetData( unitName, unitTag, data ) 
+
+    GroupManager.incognitoList[unitName] = incognito 
+    GroupManager:UpdateSetData( unitName, unitTag, setData ) 
   end
-end
+end 
+
 
 
 function DataMsg:SendData( rawNumEquipList ) 
@@ -920,9 +943,46 @@ function DataMsg:InitMsgHandler()
   local CreateNumericField = LGB.CreateNumericField
   local CreateFlagField = LGB.CreateFlagField
   self.handler = LGB:RegisterHandler("LibSetDetection")
+
+  ---@WIP 
+  local settings =  {}
+  --ütable.insert( settings, {type="checkbox", name = "test", getFunc = function() return true end, setFunc = function() end} )
+  --self.handler:SetUserSettings( LibGroupBroadcast.UserSettings:New( settings ) ) 
+
   self.handler:SetDisplayName("Lib Set Detection")
   self.handler:SetDescription("Shares equipped set pieces with group members.")
-  self.protocol = self.handler:DeclareProtocol(40, "SetData")
+  --- @ToDo include a boolean for "has filter", so you dont have an addon that says "this person has nothing equipped 
+  --- but rather just, some general warning
+
+  --- Need to give the protocolls different names and 
+  
+  --- compatibilityProtocol 
+  self.legacyProtocol = self.handler:DeclareProtocol(40, "SetData (LibVersion 4)")
+  local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
+      CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
+      CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
+      CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
+    }), { minLength = 0, maxLength = 15 } )
+  local weaponSetsArray = CreateArrayField( CreateTableField("WeaponSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 63}),     -- 6 bit
+      CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
+      CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
+    }), { minLength = 0, maxLength = 2 } )  
+  local undauntedSetsArray = CreateArrayField( CreateTableField("UndauntedSets", {
+      CreateNumericField("id", { minValue = 0, maxValue = 127}),  -- 7 bit
+      CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
+    }), { minLength = 0, maxLength = 2 } )
+  self.legacyProtocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
+  self.legacyProtocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
+  self.legacyProtocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
+  self.legacyProtocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) ) -- 6 bit
+  self.legacyProtocol:AddField( CreateFlagField("requestSync") )
+  self.legacyProtocol:OnData( function(...) self:OnIncomingMsg(...) end )  
+  self.legacyProtocol:Finalize()
+
+  --- currentProtocol 
+    self.protocol = self.handler:DeclareProtocol(41, "SetData (LibVersion 5)")
   local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
       CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
       CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
@@ -941,8 +1001,10 @@ function DataMsg:InitMsgHandler()
   self.protocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
   self.protocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
   self.protocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
-  self.protocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) )
-  self.protocol:AddField( CreateFlagField("requestSync") )
+  self.protocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) ) -- 6 bit
+  self.protocol:AddField( CreateFlagField("requestSync") ) -- 1 bit 
+  self.protocol:AddField( CreateFlagField("incognito") ) -- 1 bit 
+  
   self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   self.protocol:Finalize()
 end
@@ -1215,7 +1277,7 @@ end
 local function Initialize() 
 
   if ExoYsDevelopmentTool then 
-    libDebug = ExoYsDevelopmentTool.devMode[libName] 
+    --libDebug = ExoYsDevelopmentTool.devMode[libName] 
   end
 
   LookupTables:Initialize()
@@ -1300,6 +1362,9 @@ function LibSetDetection.GetUnitSetData( unitTag )
 end
 
 
+
+
+
 --- Raw Data Access 
 function LibSetDetection.GetUnitRawNumEquipList( unitTag ) 
   return AccessSetManager( "GetRawNumEquipList", unitTag )
@@ -1328,6 +1393,14 @@ function LibSetDetection.GetAvailableUnitTags()
   if GM.isGrouped then table.insert(availableTags, GetLocalPlayerGroupUnitTag() ) end
   return availableTags 
 end
+
+
+---@New ToDo 
+function LibSetDetection.IsUnitIncognito( unitTag ) 
+  local unitName = GetUnitName(unitTag) 
+  return GroupManager.isIncognito[unitName] 
+end
+
 
 
 --- Utility Functions
