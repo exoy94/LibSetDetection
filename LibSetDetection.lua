@@ -184,7 +184,9 @@ local twoHanderList = {
 
 
 local exceptionList = {
-  [695] = { ["maxEquip"] = 5 }  -- Shattered-Fate
+  [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
+  [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
+  []
 }
 
 
