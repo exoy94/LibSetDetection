@@ -854,33 +854,69 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
     ["WeaponSets"] = {},
     ["UndauntedSets"] = {},  
   }
+
+  -- support for incognito feature 
+  local incognitoSet = {
+    body = 0, 
+    front = 0, 
+    back = 0,
+  }
+  hasIncognitoSet = false 
+
   for setId, setData in pairs( rawNumEquipList ) do 
+    
+    --- check if setData may be transmitted 
+    local allowTransmission = nil 
+    if not IncognitoFeature.store.enabled then 
+      allowTransmission = true -- incognito feature is disabled 
+    else 
+      if IncognitoFeature.whiteListe[setId] then 
+        allowTransmission = true  -- set is exception 
+      else 
+        allowTransmission = false
+      end
+    end
 
-    ---@ToDo here a check for transmission filter
-    -- if set is to be ignored, set the entries to zero 
-
-    local setType = LUT:GetSetType( setId ) 
-    if setType == LSD_SET_TYPE_NORMAL then 
-      table.insert(formattedData["NormalSets"], {
-        id=setId, 
-        body=setData.body, 
-        front = setData.front, 
-        back = setData.back} )
-    elseif setType == LSD_SET_TYPE_MYSTICAL then
-      formattedData["mystical"] = LUT:ExternalToInternalId("mystical", setId)
-    elseif setType == LSD_SET_TYPE_UNDAUNTED then 
-      table.insert(formattedData["UndauntedSets"], {
-        id=LUT:ExternalToInternalId("undaunted", setId), 
-        body = setData.body
-      })
-    elseif setType == LSD_SET_TYPE_ABILITY_ALTERING then 
-      table.insert( formattedData["WeaponSets"], {
-        id = LUT:ExternalToInternalId("weapon", setId),
-        front = setData.front,
-        back = setData.back
-      })
+    --- data format compatible with protocol definition
+    if allowTransmission then 
+      local setType = LUT:GetSetType( setId ) 
+      if setType == LSD_SET_TYPE_NORMAL then 
+        table.insert(formattedData["NormalSets"], {
+          id=setId, 
+          body=setData.body, 
+          front = setData.front, 
+          back = setData.back} )
+      elseif setType == LSD_SET_TYPE_MYSTICAL then
+        formattedData["mystical"] = LUT:ExternalToInternalId("mystical", setId)
+      elseif setType == LSD_SET_TYPE_UNDAUNTED then 
+        table.insert(formattedData["UndauntedSets"], {
+          id=LUT:ExternalToInternalId("undaunted", setId), 
+          body = setData.body
+        })
+      elseif setType == LSD_SET_TYPE_ABILITY_ALTERING then 
+        table.insert( formattedData["WeaponSets"], {
+          id = LUT:ExternalToInternalId("weapon", setId),
+          front = setData.front,
+          back = setData.back
+        })
+      end
+    else -- accumulate set pieces of not disclosed sets 
+      hasIncognitoSet = true
+      incognitoSet.body = incognitoSet.body + setData.body
+      incognitoSet.front = incognitoSet.front + setData.front
+      incognitoSet.back = incognitoSet.back + setData.back  
     end
   end
+  
+  -- add incognito set to formatted data to be transmitted 
+  if hasIncognitoSet then 
+    table.insert(formattedData["NormalSets"], {
+          id=1, -- hardcoded setId für custom incognito set 
+          body = incognitoSet.body, 
+          front = incognitoSet.front, 
+          back = incognitoSet.back} )  
+  end
+
   return formattedData
 end
 
@@ -1309,7 +1345,6 @@ function IncognitoFeature:Initialize()
   }
   for preset, _ in pairs(ingocnitoPresets) do 
     defaults.presets[preset] = false
-
   end
 
   self.store = ZO_SavedVars:NewAccountWide("LibSetDetectionSavedVariables", 1, nil, defaults)
@@ -1320,15 +1355,15 @@ end
 
 function IncognitoFeature:BuildFilterTable() 
   local store = self.store
-  local filter = ZO_ShallowTableCopy( store.exceptions )
+  local whiteList = ZO_ShallowTableCopy( store.exceptions )
   for preset, presetData in pairs(self.presets) do 
     if store.presets[preset] then 
       for _, setId in ipairs(presetData.exceptions) do 
-        filter[setId] = true
+        whiteList[setId] = true
       end
     end
   end
-  self.filter = filter  ---@ToDo rename 
+  self.whiteList = whiteList  ---@ToDo rename 
 end
 
 
