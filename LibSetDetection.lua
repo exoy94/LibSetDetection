@@ -957,38 +957,8 @@ function DataMsg:InitMsgHandler()
   self.handler = LGB:RegisterHandler("LibSetDetection")
   self.handler:SetDisplayName("Lib Set Detection")
   self.handler:SetDescription("Shares equipped set pieces with group members.")
-  --- @ToDo include a boolean for "has filter", so you dont have an addon that says "this person has nothing equipped 
-  --- but rather just, some general warning
-
-  --- Need to give the protocolls different names and 
   
-  --- compatibilityProtocol 
-  self.legacyProtocol = self.handler:DeclareProtocol(40, "SetData (LibVersion 4)")
-  local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
-      CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
-      CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
-      CreateNumericField("front", { minValue = 0, maxValue = 2 }),  -- 2 bit
-      CreateNumericField("back", { minValue = 0, maxValue = 2 }),   -- 2 bit
-    }), { minLength = 0, maxLength = 15 } )
-  local weaponSetsArray = CreateArrayField( CreateTableField("WeaponSets", {
-      CreateNumericField("id", { minValue = 0, maxValue = 63}),     -- 6 bit
-      CreateNumericField("front", {minValue = 0, maxValue = 2}),    -- 2 bit 
-      CreateNumericField("back", {minValue = 0, maxValue = 2}),     -- 2 bit
-    }), { minLength = 0, maxLength = 2 } )  
-  local undauntedSetsArray = CreateArrayField( CreateTableField("UndauntedSets", {
-      CreateNumericField("id", { minValue = 0, maxValue = 127}),  -- 7 bit
-      CreateNumericField("body", {minValue = 1, maxValue = 2})    -- 1 bit
-    }), { minLength = 0, maxLength = 2 } )
-  self.legacyProtocol:AddField( normalSetsArray ) -- 4 bit length + x*18 bit 
-  self.legacyProtocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
-  self.legacyProtocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
-  self.legacyProtocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) ) -- 6 bit
-  self.legacyProtocol:AddField( CreateFlagField("requestSync") )
-  self.legacyProtocol:OnData( function(...) self:OnIncomingMsg(...) end )  
-  self.legacyProtocol:Finalize()
-
-  --- currentProtocol 
-  self.protocol = self.handler:DeclareProtocol(41, "SetData (LibVersion 5)")
+  self.protocol = self.handler:DeclareProtocol(40, "SetData")
   local normalSetsArray = CreateArrayField( CreateTableField("NormalSets", {
       CreateNumericField("id", { minValue = 0, maxValue = 1023 }),  --10 bit
       CreateNumericField("body", { minValue = 0, maxValue = 10 }),  -- 4 bit
@@ -1008,16 +978,13 @@ function DataMsg:InitMsgHandler()
   self.protocol:AddField( weaponSetsArray ) -- 2 bit length +  x*10 bit
   self.protocol:AddField( undauntedSetsArray ) -- 2bit length + x*8 bit
   self.protocol:AddField( CreateNumericField("mystical", {minValue = 0, maxValue = 63} ) ) -- 6 bit
-  self.protocol:AddField( CreateFlagField("requestSync") ) -- 1 bit 
-  self.protocol:AddField( CreateFlagField("incognito") ) -- 1 bit 
+  self.protocol:AddField( CreateFlagField("requestSync") )
+  self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   
-  ---@WIP - not working and dont understand why
-  self.protocol:SetDescription("hallo wordl")
----@WIP - only works for protocol and when i prevent lgb to set internal to nil
+  ---@WIP - only works for protocol and when i prevent lgb to set internal to nil
   local settings = self:GetProtocolMenu()
   self.protocol:SetUserSettings( settings )  
-
-  self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
+  
   self.protocol:Finalize()
 end
 
@@ -1086,7 +1053,7 @@ function DataMsg:GetProtocolMenu()
     end
   })
 
-  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() 
+  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() ---@Todo not intended way 
   settings:Initialize( options )  
   return settings 
 end
