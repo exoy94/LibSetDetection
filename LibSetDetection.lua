@@ -194,8 +194,8 @@ local twoHanderList = {
 }
 
 
-local exceptionList = {
-  [1] = { ["setName"] = "Incognito" } ,     -- Incognito Set 
+local customSetData = {
+  [1] = { ["setName"] = "Incognito Set" } ,     -- Incognito Set 
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
 }
@@ -205,13 +205,13 @@ local exceptionList = {
 --[[ -- Specific Utility Functions -- ]]
 --[[ -------------------------------- ]]
 
-local function CheckException(setId, attribute) 
-  if not setId then return exceptionList end  -- returns entire list, if no setId is provided
-  local hasExceptions = exceptionList[setId]  -- checks if there is an entry for the specific set
-  if not attribute then return hasExceptions end  -- returns all entries for specific set 
-  if not hasExceptions then return end  -- returns nil, if there are no entries
-  local hasSpecificException = hasExceptions[attribute] -- checks for specific entry, if provided
-  return hasSpecificException  -- returns the specific entry or nil
+local function CheckForCustomAttributeValue(setId, attribute, zosValue)
+  local customData = customSetData[setId] 
+  if not customData then return zosValue end 
+
+  local customAttribute = customData[attribute] 
+  return customAttribute or zosValue 
+  
 end
 
 
@@ -238,7 +238,8 @@ end
 
 
 local function GetSetName( setId ) 
-  local _, setName = GetItemSetInfo( setId )
+  local _, setNameZos = GetItemSetInfo( setId )
+  setName = CheckForCustomAttributeValue(setId, "setName", setNameZos) 
   if setName == "" then setName = "Unknown Set" end
   return setName
 end 
@@ -247,7 +248,7 @@ end
 local function GetMaxEquip( setId )
   local _, _, _, _, _, maxEquipZos = GetItemSetInfo( setId ) 
   if maxEquipZos == 0 then maxEquipZos = 15 end -- ensures that no set change event can be triggered by not existing sets 
-  maxEquip = CheckException(setId, "maxEquip") or maxEquipZos
+  maxEquip = CheckForCustomAttributeValue(setId, "maxEquip", maxEquipZos) 
   return maxEquip, maxEquipZos
 end
 
