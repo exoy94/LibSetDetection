@@ -10,7 +10,7 @@ LibSetDetection = LibSetDetection or {}
 
 local libName = "LibSetDetection"
 local libVersion = 5
-local libDebug = false 
+local libDebug = true 
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
@@ -245,7 +245,7 @@ end
 
 local function GetMaxEquip( setId )
   local _, _, _, _, _, maxEquipZos = GetItemSetInfo( setId ) 
-  if maxEquipZos == 0 then maxEquipZos = 15 end
+  if maxEquipZos == 0 then maxEquipZos = 15 end -- ensures that no set change event can be triggered by not existing sets 
   maxEquip = CheckException(setId, "maxEquip") or maxEquipZos
   return maxEquip, maxEquipZos
 end
@@ -1286,11 +1286,11 @@ function LookupTables:Initialize()
   self:DefineSetIdMapping()
 end
 
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
---[[ %% ------------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------------- %% ]]
 --[[ %% -- IncognitoFeature -- %% ]]
---[[ %% ------------------------ %% ]]
---[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ---------------------- %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
 
 local ingocnitoPresets = {
   ["hodor"] = {
