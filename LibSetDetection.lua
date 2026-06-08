@@ -195,6 +195,7 @@ local twoHanderList = {
 
 
 local exceptionList = {
+  [1] = { ["setName"] = "Incognito" } ,     -- Incognito Set 
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
 }
