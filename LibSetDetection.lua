@@ -6,6 +6,8 @@ LibSetDetection = LibSetDetection or {}
 -- menu addition 
 -- actual filter table 
 -- send own ingocnito state
+-- debug for incognito feature
+-- make print white list pretty 
 -- testing 
 
 local libName = "LibSetDetection"
@@ -864,13 +866,13 @@ function DataMsg:SerilizeData( rawNumEquipList, requestSync )
   hasIncognitoSet = false 
 
   for setId, setData in pairs( rawNumEquipList ) do 
-    
+
     --- check if setData may be transmitted 
     local allowTransmission = nil 
     if not IncognitoFeature.store.enabled then 
       allowTransmission = true -- incognito feature is disabled 
     else 
-      if IncognitoFeature.whiteListe[setId] then 
+      if IncognitoFeature.whiteList[setId] then 
         allowTransmission = true  -- set is exception 
       else 
         allowTransmission = false
@@ -977,7 +979,13 @@ end
 
 function DataMsg:SendData( rawNumEquipList ) 
   local requestSync = not BroadcastManager.synchronized
+  d("rawNumEquipList")
+  d(rawNumEquipList) 
+  d("----")
   local data = self:SerilizeData( rawNumEquipList, requestSync ) 
+  d("formatted data") 
+  d(data) 
+  d("----")
   if libDebug and self.debug then 
     debugMsg("BM", zo_strformat("Sending <<1>> of <<2>>; requestSync = <<3>>",ColorString("SetData", "orange"), ColorString("local player", "green"), ColorString(requestSync and "true" or "false", "orange") ) ) 
   end
@@ -1020,82 +1028,11 @@ function DataMsg:InitMsgHandler()
   self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   
   ---@WIP - only works for protocol and when i prevent lgb to set internal to nil
-  local settings = self:GetProtocolMenu()
+  local settings = IncognitoFeature:GetProtocolMenu()
   self.protocol:SetUserSettings( settings )  
   
   self.protocol:Finalize()
 end
-
-
-function DataMsg:GetProtocolMenu() 
-  local IF = IncognitoFeature 
-  local options = {}
-
-  table.insert( options, {
-    type="checkbox", 
-    name = "...but only for specific Sets", 
-    tooltip = "OFF = Information about all Sets are send. \nON = Only information about sets specified in the exceptions below are send.",
-    getFunc = function() return IF.store.enabled end, 
-    setFunc = function(bool) 
-      IF.store.enabled = bool
-    end
-  })  
-  table.insert( options, {type="divider"})
-
-  for preset, presetData in pairs(IF.presets) do 
-    local tooltipStr = "WIP" -- "Automatically adds exceptions for all sets required by 'Hodor Reflexes' to work correctly. (Master Architect, War Maschine, Pillager, Saxleel)"
-    table.insert( options, {
-    disabled = function() return not IF.store.enabled end,  
-    type="checkbox", 
-    name = "Exception Preset: "..presetData.displayName, 
-    tooltip = tooltipStr, 
-    getFunc = function() return IF.store.presets[preset] end, 
-    setFunc = function(bool) 
-      IF.store.presets[preset] = bool 
-      IF:BuildFilterTable() 
-    end
-  })
-  end
-
-  table.insert( options, {
-    disabled = function() return not IF.store.enabled end, 
-    type="editbox", 
-    name = "Additional SetId Exceptions:", 
-    isMultiline = true, 
-    isExtraWide = true, 
-    width = "full",
-    getFunc = function() return table.concat(IF.store.exceptions, ",") end, 
-    setFunc = function(text) 
-      local function splitCSV(text) -- taken from undaunted
-        local fields = {}
-        text:gsub("([^,]+)", function(result)
-        result = tonumber(result)
-        fields[#fields+1] = result and math.floor(result) or nil
-        end)
-	      return fields
-      end
-      local formattedText = splitCSV(text) 
-      d(formattedText)
-      IF.store.exceptions = formattedText 
-      IF:BuildFilterTable() 
-    end
-  })
-
-  table.insert( options, {
-    disabled = function() return not IF.store.enabled end, 
-    type="button", 
-    name = "Print Exceptions To Chat", 
-    width = "half",
-    func = function()
-      IF:PrintExceptionsToChat()
-    end
-  })
-
-  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() ---@Todo not intended way 
-  settings:Initialize( options )  
-  return settings 
-end
-
 
 
 function DataMsg:Initialize(debug) 
@@ -1346,16 +1283,21 @@ function IncognitoFeature:Initialize()
   for preset, _ in pairs(ingocnitoPresets) do 
     defaults.presets[preset] = false
   end
-
+  self.debug = true 
   self.store = ZO_SavedVars:NewAccountWide("LibSetDetectionSavedVariables", 1, nil, defaults)
   self.presets = ingocnitoPresets
-  self:BuildFilterTable() 
+  self:BuildWhiteList() 
 end
 
 
-function IncognitoFeature:BuildFilterTable() 
+function IncognitoFeature:BuildWhiteList() 
   local store = self.store
-  local whiteList = ZO_ShallowTableCopy( store.exceptions )
+  local whiteList = {}
+
+  for _, setId in ipairs( store.exceptions ) do 
+    whiteList[setId] = true 
+  end
+
   for preset, presetData in pairs(self.presets) do 
     if store.presets[preset] then 
       for _, setId in ipairs(presetData.exceptions) do 
@@ -1363,11 +1305,14 @@ function IncognitoFeature:BuildFilterTable()
       end
     end
   end
-  self.whiteList = whiteList  ---@ToDo rename 
+  self.whiteList = whiteList
+  if libDebug and self.debug then 
+    self:PrintWhiteListToChat()
+  end
 end
 
 
-function IncognitoFeature:PrintExceptionsToChat()
+function IncognitoFeature:PrintWhiteListToChat()
   local function printTableOfSets( tab ) 
       for _, setId in ipairs(tab) do 
         d(zo_strformat("[<<1>>] <<2>>", setId, GetSetName(setId)))
@@ -1385,6 +1330,75 @@ function IncognitoFeature:PrintExceptionsToChat()
     d("Custom Exceptions")
     printTableOfSets( store.exceptions ) 
   end
+end
+
+
+function IncognitoFeature:GetProtocolMenu() 
+
+  local options = {}
+
+  table.insert( options, {
+    type="checkbox", 
+    name = "...but only for specific Sets", 
+    tooltip = "OFF = Information about all Sets are send. \nON = Only information about sets specified in the exceptions below are send.",
+    getFunc = function() return self.store.enabled end, 
+    setFunc = function(bool) 
+      self.store.enabled = bool
+    end
+  })  
+  table.insert( options, {type="divider"})
+
+  for preset, presetData in pairs(self.presets) do 
+    local tooltipStr = "WIP" -- "Automatically adds exceptions for all sets required by 'Hodor Reflexes' to work correctly. (Master Architect, War Maschine, Pillager, Saxleel)"
+    table.insert( options, {
+    disabled = function() return not self.store.enabled end,  
+    type="checkbox", 
+    name = "Exception Preset: "..presetData.displayName, 
+    tooltip = tooltipStr, 
+    getFunc = function() return self.store.presets[preset] end, 
+    setFunc = function(bool) 
+      self.store.presets[preset] = bool 
+      self:BuildWhiteList() 
+    end
+  })
+  end
+
+  table.insert( options, {
+    disabled = function() return not self.store.enabled end, 
+    type="editbox", 
+    name = "Additional SetId Exceptions:", 
+    isMultiline = true, 
+    isExtraWide = true, 
+    width = "full",
+    getFunc = function() return table.concat(self.store.exceptions, ",") end, 
+    setFunc = function(text) 
+      local function splitCSV(text) -- taken from undaunted
+        local fields = {}
+        text:gsub("([^,]+)", function(result)
+        result = tonumber(result)
+        fields[#fields+1] = result and math.floor(result) or nil
+        end)
+	      return fields
+      end
+      local formattedText = splitCSV(text) 
+      self.store.exceptions = formattedText 
+      self:BuildWhiteList() 
+    end
+  })
+
+  table.insert( options, {
+    disabled = function() return not self.store.enabled end, 
+    type="button", 
+    name = "Print Exception List To Chat", 
+    width = "half",
+    func = function()
+      self:PrintWhiteListToChat()
+    end
+  })
+
+  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() ---@Todo not intended way 
+  settings:Initialize( options )  
+  return settings 
 end
 
 
@@ -1776,6 +1790,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Player", "cyan"), ColorString(tostring(PlayerSets.debug), "orange") ) ) 
       d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Group", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
       d( zo_strformat("<<1>>: <<2>>", ColorString("SlotManager", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("IncognitoFeature", "cyan"), ColorString(tostring(IncognitoFeature.debug), "orange") ) ) 
     end
   else 
     if cmd == "dev" then--and libDebug then 
