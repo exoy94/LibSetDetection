@@ -1,14 +1,15 @@
 LibSetDetection = LibSetDetection or {}
+local LSD = LibSetDetection
 
 ---@ToDo  
--- local reference on LSD 
--- remove constants from global table  
--- menu addition 
--- actual filter table 
--- send own ingocnito state
--- debug for incognito feature
--- make print white list pretty 
--- testing 
+-- [x] local reference on LSD 
+-- [ ] remove constants from global table  
+-- [ ] menu addition 
+-- [ ] actual filter table 
+-- [ ] send own ingocnito state
+-- [ ] debug for incognito feature
+-- [ ] make print white list pretty 
+-- [ ] testing 
 
 local libName = "LibSetDetection"
 local libVersion = 5
@@ -613,7 +614,7 @@ function SetManager:AnalyseData()
       for setId, numEquip in pairs(self.numEquipList) do 
         local setStr = zo_strformat("[<<1>>] <<2>>", ColorString(tostring(setId), "cyan"), ColorString(GetSetName(setId), "orange")  )  
         local numEquipStr = zo_strformat("{body, front, back} = {<<1>>, <<2>>, <<3>>}", ColorString(tostring(numEquip.body), "orange"), ColorString(tostring(numEquip.front), "orange"), ColorString(tostring(numEquip.back), "orange"))
-        local setTypeStr = zo_strformat("setType = <<1>>", ColorString(setTypes[LibSetDetection.GetSetType(setId)], "orange") ) 
+        local setTypeStr = zo_strformat("setType = <<1>>", ColorString(setTypes[LSD.GetSetType(setId)], "orange") ) 
         local activeTypeStr = zo_strformat("activeType = <<1>>", ColorString(activeTypes[self.activeList[setId]], "orange") ) 
         d( zo_strformat("<<1>> || <<2>> || <<3>> || <<4>>", setStr, setTypeStr, activeTypeStr, numEquipStr ) )
       end
@@ -1505,25 +1506,25 @@ end
 
 --- Event (Un-)Registration 
 -- eventId, name, callback, unitType, param
-function LibSetDetection.RegisterEvent( eventId, name, callback, unitType, param ) 
+function LSD.RegisterEvent( eventId, name, callback, unitType, param ) 
   return CallbackManager:UpdateRegistry( true, eventId, name, callback, unitType, param)
 end
 
-function LibSetDetection.UnregisterEvent( eventId, name, unitType, param )
+function LSD.UnregisterEvent( eventId, name, unitType, param )
   return CallbackManager:UpdateRegistry( false, eventId, name, nil, unitType, param)
 end
 
 
 --- Standard Data Access 
-function LibSetDetection.GetUnitSetActiveType( unitTag, setId )
+function LSD.GetUnitSetActiveType( unitTag, setId )
   return AccessSetManager( "GetSetActiveType", unitTag, setId )
 end
 
-function LibSetDetection.GetUnitSetNumEquip( unitTag, setId )
+function LSD.GetUnitSetNumEquip( unitTag, setId )
   return AccessSetManager( "GetSetNumEquip", unitTag, setId )  
 end
 
-function LibSetDetection.GetUnitSetData( unitTag )
+function LSD.GetUnitSetData( unitTag )
   return AccessSetManager( "GetSetData", unitTag  )
 end
 
@@ -1532,23 +1533,23 @@ end
 
 
 --- Raw Data Access 
-function LibSetDetection.GetUnitRawNumEquipList( unitTag ) 
+function LSD.GetUnitRawNumEquipList( unitTag ) 
   return AccessSetManager( "GetRawNumEquipList", unitTag )
 end
 
-function LibSetDetection.GetPlayerEquippedGear( )
+function LSD.GetPlayerEquippedGear( )
   return ZO_DeepTableCopy( SlotManager.equippedGear )
 end
 
 
 --- Data Availability 
-function LibSetDetection.AreUnitDataAvailable( unitTag ) 
+function LSD.AreUnitDataAvailable( unitTag ) 
   local unitName = GetUnitName(unitTag) 
   if unitName == playerName then return true end 
   return GroupManager.groupSets[unitName] and true or false 
 end
 
-function LibSetDetection.GetAvailableUnitTags() 
+function LSD.GetAvailableUnitTags() 
   local GM = GroupManager 
   if GM.mapOutdated then GM:UpdateGroupMap() end 
   local availableTags = {}
@@ -1562,7 +1563,7 @@ end
 
 
 ---@New ToDo 
-function LibSetDetection.IsUnitIncognito( unitTag ) 
+function LSD.IsUnitIncognito( unitTag ) 
   local unitName = GetUnitName(unitTag) 
   return GroupManager.isIncognito[unitName] 
 end
@@ -1570,7 +1571,7 @@ end
 
 
 --- Utility Functions
-function LibSetDetection.ConvertActiveType( activeType ) 
+function LSD.ConvertActiveType( activeType ) 
   local activeTypeConversion = {
     [LSD_ACTIVE_TYPE_NONE] = {false, false, false, false},
     [LSD_ACTIVE_TYPE_FRONT_BAR] = {true, false, true, false}, 
@@ -1585,12 +1586,12 @@ function LibSetDetection.ConvertActiveType( activeType )
   end
 end
 
-function LibSetDetection.GetSetIdByItemLink( itemLink )
+function LSD.GetSetIdByItemLink( itemLink )
   local _, _, _, _, _, setId = GetItemLinkSetInfo( itemlink )
   return setId
 end
 
-function LibSetDetection.GetSetName( setId, withoutPerfectedString ) 
+function LSD.GetSetName( setId, withoutPerfectedString ) 
   if withoutPerfectedString then 
     return GetSetName( ConvertToUnperfected(setId) )
   else 
@@ -1598,13 +1599,13 @@ function LibSetDetection.GetSetName( setId, withoutPerfectedString )
   end 
 end 
 
-function LibSetDetection.GetSetMaxEquip( setId )
+function LSD.GetSetMaxEquip( setId )
   return GetMaxEquip( setId ) 
 end
 
 
 --- Set Type 
-function LibSetDetection.GetSetType( setId ) 
+function LSD.GetSetType( setId ) 
   return LookupTables:GetSetType( ConvertToUnperfected(setId) ) 
 end
 
@@ -1612,15 +1613,15 @@ local function IsSpecificSetType( setType, setId )
   return LookupTables:GetSetType( ConvertToUnperfected(setId) )  == setType 
 end
 
-function LibSetDetection.IsSetMystical( setId ) 
+function LSD.IsSetMystical( setId ) 
   return IsSpecificSetType( LSD_SET_TYPE_MYSTICAL, ConvertToUnperfected(setId) ) 
 end
 
-function LibSetDetection.IsSetUndaunted( setId ) 
+function LSD.IsSetUndaunted( setId ) 
   return IsSpecificSetType( LSD_SET_TYPE_UNDAUNTED, ConvertToUnperfected(setId) ) 
 end
 
-function LibSetDetection.IsSetAbilityAltering( setId ) 
+function LSD.IsSetAbilityAltering( setId ) 
   return IsSpecificSetType( LSD_SET_TYPE_ABILITY_ALTERING, ConvertToUnperfected(setId) ) 
 end
 
@@ -1630,7 +1631,7 @@ end
 --[[ --    according to esoui   -- ]]
 --[[ ----------------------------- ]]
 
-function LibSetDetection.GetEquippedSetsTable() 
+function LSD.GetEquippedSetsTable() 
   local PS = PlayerSets
   local returnTable = {}
   for setId, activeType in pairs( PS.activeList ) do 
@@ -1638,7 +1639,7 @@ function LibSetDetection.GetEquippedSetsTable()
     setData.name = GetSetName( setId ) 
     setData.maxEquipped = GetMaxEquip( setId ) 
     setData.numEquipped = PS.numEquipList[setId] 
-    local _, activeOnBody, activeOnFront, activeOnBack = LibSetDetection.ConvertActiveType( activeType)
+    local _, activeOnBody, activeOnFront, activeOnBack = LSD.ConvertActiveType( activeType)
     setData.activeBar = {
         ["body"] = activeOnBody, 
         ["front"] = activeOnFront, 
@@ -1725,7 +1726,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     end
   elseif cmd == "setdata" then
     local function OutputSetData(unitTag)
-      local setData = LibSetDetection.GetUnitSetData(unitTag) 
+      local setData = LSD.GetUnitSetData(unitTag) 
       --d( ColorString(zo_strformat("<<1>> (<<2>>):", GetUnitName(unitTag), unitTag), "green")) 
       local numEquip = {0,0,0}
       for setId, setInfo in pairs(setData) do
@@ -1742,7 +1743,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     end
     
     if IsString(param[1]) and param[1] ~= "" then 
-      if LibSetDetection.AreUnitDataAvailable(param[1]) then 
+      if LSD.AreUnitDataAvailable(param[1]) then 
         d( zo_strformat("[<<1>>] setdata for <<2>> (<<3>>)", ColorString("LibSetDetection", "green"), ColorString(GetUnitName(param[1]), "green"), ColorString(param[1], "green") ))
         OutputSetData(param[1])  
       else 
@@ -1750,7 +1751,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
       end    
     else 
       d( zo_strformat("[<<1>>] setdata for <<2>> ", ColorString("LibSetDetection", "green"), ColorString("all units", "green") ))
-      local unitList = LibSetDetection.GetAvailableUnitTags() 
+      local unitList = LSD.GetAvailableUnitTags() 
       for _, unitTag in ipairs(unitList) do 
         d( zo_strformat("Unit: <<1>> (<<2>>)", ColorString(GetUnitName(unitTag), "green"), ColorString(unitTag, "green") ) )  
         OutputSetData(unitTag)
@@ -1759,9 +1760,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
     end
   elseif cmd == "groupsets" then
     local groupSets = {} 
-    for _, unitTag in pairs(LibSetDetection.GetAvailableUnitTags()) do 
+    for _, unitTag in pairs(LSD.GetAvailableUnitTags()) do 
       if unitTag ~= "player" then 
-        local unitSets = LibSetDetection.GetUnitSetData(unitTag)  
+        local unitSets = LSD.GetUnitSetData(unitTag)  
         for setId, setData in pairs(unitSets) do 
           if setData.activeType > 0 then 
             groupSets[setId] = groupSets[setId] or {}
