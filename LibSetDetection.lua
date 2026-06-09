@@ -37,10 +37,10 @@ local Development = {}
 --[[ --------------- ]]
 
 local function Template_SlotCategorySubtables( initBody, initFront, initBack )
-  _initBody = initBody or 0 
-  _initFront = initFront or 0 
-  _initBack = initBack or 0
-  return { ["body"] = _initBody, ["front"] = _initFront, ["back"] = _initBack }
+  initBody = initBody or 0 
+  initFront = initFront or 0 
+  initBack = initBack or 0
+  return { ["body"] = initBody, ["front"] = initFront, ["back"] = initBack }
 end
 
 --[[ ------------------------------- ]]
