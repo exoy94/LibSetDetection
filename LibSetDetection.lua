@@ -4,9 +4,9 @@ local LSD = LibSetDetection
 ---@ToDo  
 -- [x] local reference on LSD 
 -- [ ] remove constants from global table  
--- [ ] menu addition 
--- [ ] actual filter table 
--- [ ] send own ingocnito state
+-- [x] menu addition 
+-- [x] actual filter table 
+-- [ ] send own ingocnito state --> dont need incognito state since incognito set is unique 
 -- [ ] debug for incognito feature
 -- [ ] make print white list pretty 
 -- [ ] testing 
@@ -214,7 +214,6 @@ local function CheckForCustomAttributeValue(setId, attribute, zosValue)
 
   local customAttribute = customData[attribute] 
   return customAttribute or zosValue 
-  
 end
 
 
@@ -243,7 +242,7 @@ end
 local function GetSetName( setId ) 
   local _, setNameZos = GetItemSetInfo( setId )
   setName = CheckForCustomAttributeValue(setId, "setName", setNameZos) 
-  if setName == "" then setName = "Unknown Set" end
+  if setName == "" then setName = "Invalid Set" end
   return setName
 end 
 
@@ -1271,7 +1270,11 @@ end
 local ingocnitoPresets = {
   ["hodor"] = {
     displayName = "Hodor Reflexes", 
-    exceptions = {331, 332, 585, 649}, -- War Maschine, MasterArchitect, Saxhleel, Pillager 
+    exceptions = {
+      [331] = true,   -- War Maschine
+      [332] = true,   -- Master Architect
+      [585] = true,   -- Saxhleel (normal) 
+      [649] = true},  -- Pillager (normal) 
   }
 }
 
@@ -1293,29 +1296,22 @@ end
 
 function IncognitoFeature:BuildWhiteList() 
   local store = self.store
-  local whiteList = {}
-
-  for _, setId in ipairs( store.exceptions ) do 
-    whiteList[setId] = true 
-  end
+  local whiteList = ZO_ShallowTableCopy( store.exceptions ) 
 
   for preset, presetData in pairs(self.presets) do 
     if store.presets[preset] then 
-      for _, setId in ipairs(presetData.exceptions) do 
+      for setId, _ in pairs(presetData.exceptions) do 
         whiteList[setId] = true
       end
     end
   end
   self.whiteList = whiteList
-  if libDebug and self.debug then 
-    self:PrintWhiteListToChat()
-  end
 end
 
 
 function IncognitoFeature:PrintWhiteListToChat()
   local function printTableOfSets( tab ) 
-      for _, setId in ipairs(tab) do 
+      for setId,_ in pairs(tab) do 
         d(zo_strformat("[<<1>>] <<2>>", setId, GetSetName(setId)))
       end
   end
@@ -1371,7 +1367,13 @@ function IncognitoFeature:GetProtocolMenu()
     isMultiline = true, 
     isExtraWide = true, 
     width = "full",
-    getFunc = function() return table.concat(self.store.exceptions, ",") end, 
+    getFunc = function() 
+      local exceptions = {} 
+      for setId, _ in pairs( self.store.exceptions) do 
+        table.insert( exceptions, setId ) 
+      end
+      return table.concat(exceptions, ",") 
+    end, 
     setFunc = function(text) 
       local function splitCSV(text) -- taken from undaunted
         local fields = {}
@@ -1381,8 +1383,11 @@ function IncognitoFeature:GetProtocolMenu()
         end)
 	      return fields
       end
-      local formattedText = splitCSV(text) 
-      self.store.exceptions = formattedText 
+      local formattedText = splitCSV(text)
+      self.store.exceptions = {}
+      for _, setId in ipairs( formattedText ) do 
+        self.store.exceptions[setId] = true
+      end
       self:BuildWhiteList() 
     end
   })
@@ -1655,15 +1660,15 @@ end
 --[[ ------------------- ]]
 
 local cmdList = {
-  ["equipped"] = "list of the equipped set-pieces for each equipment slot",
-  ["setid"] = "list of setIds, that include the provided search string (input: *search string*)",
-  ["setname"] = "localized name of the set with the provided id (input: *setId*)",
-  ["setdata"] = "overview of equipped set for all available units (optional input: *uniTag* - only output for specific unit)",
-  ["groupsets"] = "overview of all known sets equipped in group with corresponding member",
-  ["debug"] = "list of debug states of library modules",
+  ["incognito"] = {"overview of commands to use the incognito feature"}, 
+  ["debug"] = {"prints debug setting for each module"},
+  ["debug toggle"] = {"toggles selected debug state", "*moduleName*"}, 
+  ["equipped"] = {"prints player's equipped setId for each equipment slot"},
+  ["setdata"] = {"overview of equipped set for all available units", "*unitTag (optional)"},
+  ["groupsets"] = {"overview of all known sets equipped in group with corresponding member"},
+  ["setid"] = {"list of setIds, that include the provided search string", "*name*"},
+  ["setname"] = {"localized name of the set with the provided id",  "*setId*"},
 }
-
-
 
 
 SLASH_COMMANDS["/lsd"] = function( input ) 
@@ -1677,10 +1682,24 @@ SLASH_COMMANDS["/lsd"] = function( input )
   local cmd = table.remove(param, 1) 
   
   if not cmd or cmd == ""  then 
-    d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "green"), "command overview") ) 
-    for cmdName, cmdInfo in pairs( cmdList ) do 
-      d( zo_strformat("<<1>> - <<2>>", ColorString(cmdName, "cyan"), cmdInfo) )
+    --- overview of all available commands 
+    local function _printCmd(cmdName)
+      local cmdData = cmdList[cmdName]  
+      local cmdStr = ColorString(zo_strformat("/lsd <<1>> <<2>>", cmdName, cmdData[2] or ""), "cyan") 
+      d( zo_strformat("<<1>> - <<2>>", cmdStr, cmdData[1]) )
     end
+    d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "green"), "Overview of available chat commands") ) 
+    d( ColorString("-- Library Interface --", "orange"))
+    _printCmd( "incognito" )
+    _printCmd( "debug" )
+    _printCmd( "debug toggle" )
+    d( ColorString("-- Print Data --", "orange"))
+    _printCmd( "equipped" )
+    _printCmd( "groupsets" )
+    _printCmd( "setdata" )
+    d( ColorString("-- Utility --", "orange"))
+    _printCmd( "setid" )
+    _printCmd( "setname" )
     d("--------------------")
   elseif cmd == "equipped" then 
     local OutputSets = function(slotCategory) 
@@ -1779,6 +1798,36 @@ SLASH_COMMANDS["/lsd"] = function( input )
       end
       d( "--------------------------------------------------")
     end
+  elseif cmd == "incognito" then 
+    if param[1] == "toggle" then 
+      IncognitoFeature.store.enabled = not IncognitoFeature.store.enabled
+    elseif param[1] == "add" then
+      local setId = tonumber(param[2]) 
+      if setId then -- setId is nil, if param[2] cant be converted to number
+        setId = math.floor(setId) -- make sure only integer values for setIds
+        IncognitoFeature.store.exceptions[ setId ] = true
+        IncognitoFeature:BuildWhiteList()
+      else 
+        d("wrong format")
+      end
+    elseif param[1] == "remove" then 
+      local setId = tonumber( param[2] )
+      if setId then 
+        setId = math.floor(setId) -- make sure only integer values for setIds
+        IncognitoFeature.store.exceptions[ setId ] = nil
+        IncognitoFeature:BuildWhiteList() 
+      else
+        d("wrong format") 
+      end  
+    elseif param[1] == "print" then 
+      IncognitoFeature:PrintWhiteListToChat()
+    else  -- helper for incognito functions
+      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito toggle", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito add *setId*", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito remove *setId", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito print", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
+    end
+
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
       libDebug = not libDebug 
