@@ -3,7 +3,7 @@ local LSD = LibSetDetection
 
 ---@ToDo  
 -- [x] local reference on LSD 
--- [ ] remove constants from global table  
+-- [x] remove constants from global table  
 -- [x] menu addition 
 -- [x] actual filter table 
 -- [x] send own ingocnito state --> dont need incognito state since incognito set is unique 
@@ -817,9 +817,6 @@ function GroupManager:Initialize()
   self.groupMap = {}
   self.mapOutdated = true 
 
-  self.incognitoList = {}
-
-
   --- event callbacks
   local function OnGroupMemberJoined(_, charName, _, isLocalPlayer) 
     if isLocalPlayer then 
@@ -844,7 +841,6 @@ function GroupManager:Initialize()
         debugMsg("GM", zo_strformat("Removed data of <<1>> because they <<2>>", ColorString(unitName, "green"), ColorString("left group", "orange") ) ) 
       end 
       GM.groupSets[unitName] = nil  
-      GM.incognitoList[unitName] = nil 
     end 
   end
   
@@ -997,10 +993,8 @@ function DataMsg:OnIncomingMsg( unitTag, rawData )
   else 
     local setData = self:DeserilizeData(rawData)
     local requestSync = rawData.requestSync 
-    local incognito = rawData.incognito 
     if libDebug and self.debug then 
       local syncStr = requestSync and ColorString("- sync requested", "orange") or ""
-      local incogStr = incognito and ColorString("[incognito]", "orange") or ""
       debugMsg("BM", zo_strformat("Received Data from <<1>> (<<2>>) <<3>> <<4>>", ColorString(unitName, "green"), ColorString(unitTag, "green"), incogStr, syncStr ) )
     end    
 
@@ -1008,7 +1002,6 @@ function DataMsg:OnIncomingMsg( unitTag, rawData )
       BroadcastManager:QueueBroadcast( PlayerSets.numEquipList, false, true )
     end
 
-    GroupManager.incognitoList[unitName] = incognito 
     GroupManager:UpdateSetData( unitName, unitTag, setData ) 
   end
 end 
