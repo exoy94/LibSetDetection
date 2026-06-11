@@ -198,6 +198,7 @@ local twoHanderList = {
 
 
 local customSetData = {
+  [0] = { ["setName"] = "Generic Gear"}, 
   [1] = { ["setName"] = "Incognito Set" } ,     -- Incognito Set 
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
@@ -242,7 +243,7 @@ end
 local function GetSetName( setId ) 
   local _, setNameZos = GetItemSetInfo( setId )
   setName = CheckForCustomAttributeValue(setId, "setName", setNameZos) 
-  if setName == "" then setName = "Invalid Set" end
+  --if setName == "" then setName = "Invalid Set" end
   return setName
 end 
 
@@ -281,6 +282,8 @@ end
 
 local function ColorString(str, colorName) 
   local colorList = {
+    ["red"] = "ff0000", 
+    ["blue"] = "0000ff", 
     ["green"] = "00ff00",  
     ["orange"] = "ff8800", 
     ["cyan"] = "00ffff", 
@@ -979,13 +982,7 @@ end
 
 function DataMsg:SendData( rawNumEquipList ) 
   local requestSync = not BroadcastManager.synchronized
-  d("rawNumEquipList")
-  d(rawNumEquipList) 
-  d("----")
   local data = self:SerilizeData( rawNumEquipList, requestSync ) 
-  d("formatted data") 
-  d(data) 
-  d("----")
   if libDebug and self.debug then 
     debugMsg("BM", zo_strformat("Sending <<1>> of <<2>>; requestSync = <<3>>",ColorString("SetData", "orange"), ColorString("local player", "green"), ColorString(requestSync and "true" or "false", "orange") ) ) 
   end
@@ -1662,12 +1659,28 @@ end
 local cmdList = {
   ["incognito"] = {"overview of commands to use the incognito feature"}, 
   ["debug"] = {"prints debug setting for each module"},
-  ["debug toggle"] = {"toggles selected debug state", "*moduleName*"}, 
-  ["equipped"] = {"prints player's equipped setId for each equipment slot"},
-  ["setdata"] = {"overview of equipped set for all available units", "*unitTag (optional)"},
-  ["groupsets"] = {"overview of all known sets equipped in group with corresponding member"},
-  ["setid"] = {"list of setIds, that include the provided search string", "*name*"},
-  ["setname"] = {"localized name of the set with the provided id",  "*setId*"},
+  --["debug toggle"] = {"toggles selected debug state", "*moduleName* or *moduleAcronym"}, 
+  ["equipped"] = {"List of all gear pieces equipped by the player"},
+  ["setdata"] = {"List of equipped set for all available units", "*unitTag (optional)"},
+  ["groupsets"] = {"List of all fully equipped sets in your group with the corresponding member"},
+  ["setid"] = {"List of set IDs whose names contain the specified search string.", "*searchStr*"},
+  ["setname"] = {"Name of the set with the specified setId",  "*setId*"},
+}
+
+local moduleList = {
+  ["BM"] = {"BroadcastManager", },
+  ["CM"] = {"CallbackManager", },
+  ["GM"] = {"GroupManager", },
+  ["SM"] = {"SlotManager", },
+  ["SMP"] = {"SetManager (Player) ", },
+  ["SMG"] = {"SetManager (Groupmember)", },
+  ["IF"] = {"IncognitoFeature",},
+}
+
+local roleList = {
+  [LFG_ROLE_TANK] = {"tank", "red"}, 
+  [LFG_ROLE_HEAL] = {"heal", "green"}, 
+  [LFG_ROLE_DPS] = {"dd", "blue"},
 }
 
 
@@ -1688,12 +1701,12 @@ SLASH_COMMANDS["/lsd"] = function( input )
       local cmdStr = ColorString(zo_strformat("/lsd <<1>> <<2>>", cmdName, cmdData[2] or ""), "cyan") 
       d( zo_strformat("<<1>> - <<2>>", cmdStr, cmdData[1]) )
     end
-    d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "green"), "Overview of available chat commands") ) 
+    d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), "Overview of available chat commands") ) 
     d( ColorString("-- Library Interface --", "orange"))
     _printCmd( "incognito" )
     _printCmd( "debug" )
-    _printCmd( "debug toggle" )
-    d( ColorString("-- Print Data --", "orange"))
+    --_printCmd( "debug toggle" )
+    d( ColorString("-- Output Data --", "orange"))
     _printCmd( "equipped" )
     _printCmd( "groupsets" )
     _printCmd( "setdata" )
@@ -1701,6 +1714,38 @@ SLASH_COMMANDS["/lsd"] = function( input )
     _printCmd( "setid" )
     _printCmd( "setname" )
     d("--------------------")
+  --- incognito feature 
+  elseif cmd == "incognito" then 
+    if param[1] == "toggle" then 
+      IncognitoFeature.store.enabled = not IncognitoFeature.store.enabled
+    elseif param[1] == "add" then
+      local setId = tonumber(param[2]) 
+      if setId then -- setId is nil, if param[2] cant be converted to number
+        setId = math.floor(setId) -- make sure only integer values for setIds
+        IncognitoFeature.store.exceptions[ setId ] = true
+        IncognitoFeature:BuildWhiteList()
+      else 
+        d("setId must be a number") 
+      end
+    elseif param[1] == "remove" then 
+      local setId = tonumber( param[2] )
+      if setId then 
+        setId = math.floor(setId) -- make sure only integer values for setIds
+        IncognitoFeature.store.exceptions[ setId ] = nil
+        IncognitoFeature:BuildWhiteList() 
+      else
+        d("setId must be a number") 
+      end  
+    elseif param[1] == "print" then 
+      IncognitoFeature:PrintWhiteListToChat()
+    else  -- overview of incognito functions
+      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito toggle", "cyan"), "" ) ) 
+      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito add *setId*", "cyan"), "" ) ) 
+      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito remove *setId", "cyan"), "" ) ) 
+      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito print", "cyan"), "" ) ) 
+    end
+  
+    --- equipped 
   elseif cmd == "equipped" then 
     local OutputSets = function(slotCategory) 
       d("--- "..ColorString(slotCategory, "cyan").." --- ")
@@ -1709,40 +1754,91 @@ SLASH_COMMANDS["/lsd"] = function( input )
         d( zo_strformat("<<1>>: <<2>> (<<3>>)", slotName, ColorString(GetSetName(setId), "orange") , setId ) )
       end  
     end
-    d( zo_strformat("[<<1>>] equipped sets:", ColorString("LibSetDetection", "green") ))
+    d( zo_strformat("[<<1>>] <<2>>:", ColorString("LibSetDetection", "cyan"), cmdList["equipped"][1] ))
     OutputSets( "Body" )  
     OutputSets( "Front" ) 
     OutputSets( "Back" )
-    d("--------------------")
-  elseif cmd == "setid" then
-    if IsString(param[1]) and param[1] ~= "" then 
-      d( zo_strformat("[<<1>>] searching for sets with '<<2>>'...", ColorString("LibSetDetection", "green"), ColorString(param[1], "cyan") ) )
-      local foundMatch = false
-      for ii=0,1023,1 do 
-        local setName = GetSetName(ii)
-        if string.find( string.lower(setName), string.lower(param[1]) ) then 
-          d( zo_strformat("(<<1>>) - <<2>>", ii, ColorString(setName, "orange") ) )
-          foundMatch = true
+    d( "--------------------------------------------------")
+  
+    --- groupsets
+  elseif cmd == "groupsets" then
+    local groupSets = {} 
+    for _, unitTag in pairs(LSD.GetAvailableUnitTags()) do 
+      if unitTag ~= "player" then 
+        local unitSets = LSD.GetUnitSetData(unitTag)  
+        for setId, setData in pairs(unitSets) do 
+          if setData.activeType > 0 then -- only listing complete sets
+            groupSets[setId] = groupSets[setId] or {}
+            groupSets[setId][unitTag] = true
+          end
         end
       end
-      if not foundMatch then 
-        d( ColorString("no match found", "cyan")  )
-      end
-    else 
-      d( zo_strformat("[<<1>>] invalid input for search", ColorString("LibSetDetection", "cyan") ))
     end
+    local sortedGroupSets = {}
+    for setId, _ in pairs(groupSets) do 
+      table.insert(sortedGroupSets, setId)
+    end
+    table.sort(sortedGroupSets)
+    d( zo_strformat("[<<1>>] <<2>>:", ColorString("LibSetDetection", "cyan"), cmdList["groupsets"][1] ) )
+    for _, setId in pairs(sortedGroupSets) do 
+      d("--------------------")
+      d( zo_strformat("[<<1>>] <<2>>", setId, ColorString(GetSetName(setId), "orange") ) )
+      local counter = 0
+      for i=1,LARGE_GROUP_SIZE_THRESHOLD do 
+        local unitTag = "group"..tostring(i) 
+        if groupSets[setId][unitTag] then   
+          local role = GetGroupMemberSelectedRole(unitTag) 
+          local tagStr = zo_strformat("<<1>> - <<2>>", unitTag, roleList[role][1])
+          counter = counter + 1
+          d( zo_strformat("<<1>> [<<2>>] <<3>> / <<4>>", counter, ColorString(tagStr, roleList[role][2]), GetUnitDisplayName(unitTag), GetUnitName(unitTag) ) )
+        end
+      end      
+    end
+    d( "--------------------------------------------------")
+
+  --- setid 
+  elseif cmd == "setid" then
+    local searchStr = param[1]
+    d( zo_strformat("[<<1>>] Searching for sets with '<<2>>' in their name...", ColorString("LibSetDetection", "cyan"), ColorString(searchStr, "cyan") ) )
+    local foundMatch = false
+    local counter = 0 
+    for i=0,1023 do 
+      local setName = GetSetName(i)
+      if setName ~= "" and string.find( string.lower(setName), string.lower(searchStr) ) then 
+        d( zo_strformat("[<<1>>] <<2>>", i, ColorString(setName, "orange") ) )
+        counter = counter + 1
+        foundMatch = true
+      end
+    end
+    if foundMatch then 
+      local matchStr = counter == 1 and " match" or " matches"
+      d( zo_strformat("<<1>> found with the search string '<<2>>'.", ColorString(tostring(counter)..matchStr, "green"), ColorString(searchStr, "cyan")  ) )
+    else 
+      d( zo_strformat("<<1>> found for search string '<<2>>'.", ColorString("No matches", "red"), ColorString(searchStr, "cyan")  ) )
+    end
+    d( "--------------------------------------------------")
+
+  --- setname
   elseif cmd == "setname" then 
     local setId = tonumber(param[1])
     if IsNumber(setId) then  
-      local setName = GetSetName(setId) 
-      if setName == "" then 
-        d( zo_strformat("[<<1>>] no set name found for <<2>> = <<3>>", ColorString("LibSetDetection", "green"), ColorString("setId", "cyan"), setId) ) 
+      if setId == 0 then 
+        d( zo_strformat("[<<1>>] <<2>> (<<3>>) - Custom name of LSD used for gear <<4>>.", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId), "orange"), setId, ColorString("without a set", "cyan")) )
+      elseif setId == 1 then 
+        d( zo_strformat("[<<1>>] <<2>> (<<3>>) - Custom name of LSD used for sets hidden via the <<4>>.", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId), "orange"), setId, ColorString("incognito feature", "cyan")) )
       else 
-        d( zo_strformat("[<<1>>] <<2>> (<<3>>)", ColorString("LibSetDetection", "green"), ColorString(GetSetName(setId), "orange"), setId) ) 
+        local setName = GetSetName(setId) 
+        if setName == "" then 
+          d( zo_strformat("[<<1>>] No official set was found with <<2>>.", ColorString("LibSetDetection", "cyan"), ColorString("setId = "..tostring(setId), "cyan")) ) 
+        else 
+          d( zo_strformat("[<<1>>] <<2>> (<<3>>)", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId), "orange"), setId) ) 
+        end
       end
     else 
-      d( zo_strformat("[<<1>>] invalid input for search", ColorString("LibSetDetection", "green") ))
+      d( zo_strformat("[<<1>>] Provided setId must be a number. ", ColorString("LibSetDetection", "cyan") ))
     end
+
+  --- setdata
   elseif cmd == "setdata" then
     local function OutputSetData(unitTag)
       local setData = LSD.GetUnitSetData(unitTag) 
@@ -1777,70 +1873,23 @@ SLASH_COMMANDS["/lsd"] = function( input )
         d( "--------------------------------------------------")
       end
     end
-  elseif cmd == "groupsets" then
-    local groupSets = {} 
-    for _, unitTag in pairs(LSD.GetAvailableUnitTags()) do 
-      if unitTag ~= "player" then 
-        local unitSets = LSD.GetUnitSetData(unitTag)  
-        for setId, setData in pairs(unitSets) do 
-          if setData.activeType > 0 then 
-            groupSets[setId] = groupSets[setId] or {}
-            table.insert( groupSets[setId], unitTag)
-          end
-        end
-      end
-    end
-    d( zo_strformat("[<<1>>] all sets equipped in <<2>> ", ColorString("LibSetDetection", "green"), ColorString("group", "green") ) )
-    for setId, units in pairs(groupSets) do 
-      d( zo_strformat("[<<1>>] <<2>>:", setId, ColorString(GetSetName(setId), "orange") ) )
-      for key, unitTag in pairs(units) do 
-        d( zo_strformat("   <<1>>. <<2>> (<<3>>)", key, ColorString(GetUnitName(unitTag), "green"), ColorString(unitTag, "green") ) )   
-      end
-      d( "--------------------------------------------------")
-    end
-  elseif cmd == "incognito" then 
-    if param[1] == "toggle" then 
-      IncognitoFeature.store.enabled = not IncognitoFeature.store.enabled
-    elseif param[1] == "add" then
-      local setId = tonumber(param[2]) 
-      if setId then -- setId is nil, if param[2] cant be converted to number
-        setId = math.floor(setId) -- make sure only integer values for setIds
-        IncognitoFeature.store.exceptions[ setId ] = true
-        IncognitoFeature:BuildWhiteList()
-      else 
-        d("wrong format")
-      end
-    elseif param[1] == "remove" then 
-      local setId = tonumber( param[2] )
-      if setId then 
-        setId = math.floor(setId) -- make sure only integer values for setIds
-        IncognitoFeature.store.exceptions[ setId ] = nil
-        IncognitoFeature:BuildWhiteList() 
-      else
-        d("wrong format") 
-      end  
-    elseif param[1] == "print" then 
-      IncognitoFeature:PrintWhiteListToChat()
-    else  -- helper for incognito functions
-      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito toggle", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito add *setId*", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito remove *setId", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("/lsd incognito print", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
-    end
+
+  
 
   elseif cmd == "debug" then 
     if param[1] == "toggle" then 
       libDebug = not libDebug 
       d( zo_strformat("[<<1>>] Library debug state switched: <<2>>", ColorString("LibSetDetection", "green"), ColorString(libDebug and "on" or "off", "orange") ) )
     else 
+      -- print all debug states 
       d( zo_strformat("[<<1>>] Library debug state: <<2>>", ColorString("LibSetDetection", "green"), ColorString(tostring(libDebug), "orange") ) )  
-      d( zo_strformat("<<1>>: <<2>>", ColorString("BroadcastManager", "cyan"), ColorString(tostring(BroadcastManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("CallbackManager", "cyan"), ColorString(tostring(CallbackManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("GroupManager", "cyan"), ColorString(tostring(GroupManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Player", "cyan"), ColorString(tostring(PlayerSets.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Group", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("SlotManager", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
-      d( zo_strformat("<<1>>: <<2>>", ColorString("IncognitoFeature", "cyan"), ColorString(tostring(IncognitoFeature.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("BroadcastManager (BM)", "cyan"), ColorString(tostring(BroadcastManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("CallbackManager (CM)", "cyan"), ColorString(tostring(CallbackManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("GroupManager (GM)", "cyan"), ColorString(tostring(GroupManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Player (player)", "cyan"), ColorString(tostring(PlayerSets.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SetManager - Group (group)", "cyan"), ColorString(tostring(EmptySetManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("SlotManager (SM)", "cyan"), ColorString(tostring(SlotManager.debug), "orange") ) ) 
+      d( zo_strformat("<<1>>: <<2>>", ColorString("IncognitoFeature (IF) ", "cyan"), ColorString(tostring(IncognitoFeature.debug), "orange") ) ) 
     end
   else 
     if cmd == "dev" then--and libDebug then 
