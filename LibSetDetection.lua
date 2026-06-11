@@ -6,9 +6,9 @@ local LSD = LibSetDetection
 -- [ ] remove constants from global table  
 -- [x] menu addition 
 -- [x] actual filter table 
--- [ ] send own ingocnito state --> dont need incognito state since incognito set is unique 
+-- [x] send own ingocnito state --> dont need incognito state since incognito set is unique 
 -- [ ] debug for incognito feature
--- [ ] make print white list pretty 
+-- [x] make print white list pretty 
 -- [ ] testing 
 
 local libName = "LibSetDetection"
@@ -87,15 +87,50 @@ local function MergeTables(t1, t2)
 end
 
 
---[[ ---------------------- ]]
---[[ -- Global Variables -- ]]
---[[ ---------------------- ]]
- 
 
+--[[ --------------- ]]
+--[[ -- Constants -- ]]
+--[[ --------------- ]]
+
+LSD.constants = {
+  -- custom event id's
+  ["event_set_change"] = 1, 
+  ["event_data_update"] = 2, 
+  -- change types 
+  ["change_type_deactivated"] = 1, 
+  ["change_type_activated"] = 2, 
+  ["change_type_updated"] = 3, 
+  -- unit type 
+  ["unit_type_player"] = 1, 
+  ["unit_type_group"] = 2, 
+  -- active type 
+  ["active_type_none"] = 0, 
+  ["active_type_dual_bar"] = 1, 
+  ["active_type_front_bar"] = 2, 
+  ["active_type_back_bar"] = 3, 
+  -- set type
+  ["set_type_normal"] = 0, 
+  ["set_type_mystic"] = 1, 
+  ["set_type_undaunted"] = 2, 
+  ["set_type_ability_altering"] = 3, 
+}
+local Const = LSD.constants
+
+--[[ Developer Comment ]]
+-- In code overhaul relased with version 4 of this library I added the following 
+-- variables to the global table based on how ZOS uses constants for events and such. 
+-- In an effort to reduce the number of entries to the global table those constants 
+-- where move to the exposed table "LibSetDetection.constants" with version 5.
+-- To prevent anything to break upon releas of the new library version, I will 
+-- TEMPORARILY leave the constants below in the global name space. 
+-- With game update U51, those constants will be made local without backwards compatibility 
+-- and thus no longer accessible by other addons. This gives everybody roughly two mounth to 
+-- to make the necessary changes to their addons. 
+--- TL;DR: constants below will not be available globally with the release of game update 51
 
 --- eventId
-LSD_EVENT_SET_CHANGE = 1 
-LSD_EVENT_DATA_UPDATE = 2
+LSD_EVENT_SET_CHANGE = Const.event_set_change
+LSD_EVENT_DATA_UPDATE = Const.event_data_update
 
 local events = {
   [LSD_EVENT_SET_CHANGE] = "SetChange", 
@@ -104,9 +139,9 @@ local events = {
 
 
 --- changeType
-LSD_CHANGE_TYPE_DEACTIVATED = 1
-LSD_CHANGE_TYPE_ACTIVATED = 2
-LSD_CHANGE_TYPE_UPDATED = 3 
+LSD_CHANGE_TYPE_DEACTIVATED = Const.change_type_deactivated
+LSD_CHANGE_TYPE_ACTIVATED = Const.change_type_activated
+LSD_CHANGE_TYPE_UPDATED = Const.change_type_updated
 
 local changeTypes = {
   [LSD_CHANGE_TYPE_DEACTIVATED] = "deactivated", 
@@ -115,20 +150,19 @@ local changeTypes = {
 }
 
 --- unitType
-LSD_UNIT_TYPE_PLAYER = 1 
-LSD_UNIT_TYPE_GROUP = 2
+LSD_UNIT_TYPE_PLAYER = Const.unit_type_player
+LSD_UNIT_TYPE_GROUP = Const.unit_type_group
 
 local unitTypes = {
   [LSD_UNIT_TYPE_PLAYER] = "Player", 
   [LSD_UNIT_TYPE_GROUP] = "Group", 
 }
 
-
 --- activeType 
-LSD_ACTIVE_TYPE_NONE = 0 
-LSD_ACTIVE_TYPE_DUAL_BAR = 1
-LSD_ACTIVE_TYPE_FRONT_BAR = 2
-LSD_ACTIVE_TYPE_BACK_BAR = 3 
+LSD_ACTIVE_TYPE_NONE = Const.active_type_none
+LSD_ACTIVE_TYPE_DUAL_BAR = Const.active_type_dual_bar
+LSD_ACTIVE_TYPE_FRONT_BAR = Const.active_type_front_bar
+LSD_ACTIVE_TYPE_BACK_BAR = Const.active_type_back_bar
 
 local activeTypes = {
   [LSD_ACTIVE_TYPE_NONE] = "None",
@@ -137,12 +171,11 @@ local activeTypes = {
   [LSD_ACTIVE_TYPE_BACK_BAR] = "Back",
 }
 
-
 --- setType 
-LSD_SET_TYPE_NORMAL = 0 
-LSD_SET_TYPE_MYSTICAL = 1 
-LSD_SET_TYPE_UNDAUNTED = 2 
-LSD_SET_TYPE_ABILITY_ALTERING = 3
+LSD_SET_TYPE_NORMAL = Const.set_type_normal
+LSD_SET_TYPE_MYSTICAL = Const.set_type_mystic
+LSD_SET_TYPE_UNDAUNTED = Const.set_type_undaunted
+LSD_SET_TYPE_ABILITY_ALTERING = Const.set_type_ability_altering
 
 local setTypes = {
   [LSD_SET_TYPE_NORMAL] = "normal", 
@@ -150,6 +183,8 @@ local setTypes = {
   [LSD_SET_TYPE_UNDAUNTED] = "undaunted", 
   [LSD_SET_TYPE_ABILITY_ALTERING] = "ability altering", 
 }
+
+
 
 --[[ --------------------- ]]
 --[[ -- Local Variables -- ]]
@@ -1420,6 +1455,7 @@ end
 
 
 local function OnSlotUpdate(_, _, slotId, _, _, _) 
+--local function OnSlotUpdate(eventCode, bagId, slotId, isNewItem, itemSound, inventoryUpdate, stackCount) 
   SlotManager:UpdateSlot(slotId)
 end
 
