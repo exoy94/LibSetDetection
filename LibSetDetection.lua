@@ -1312,17 +1312,16 @@ function IncognitoFeature:PrintWhiteListToChat()
         d(zo_strformat("[<<1>>] <<2>>", setId, GetSetName(setId)))
       end
   end
-
-  local store = self.store  
-  for preset, presetData in pairs(self.presets) do 
-    if store.presets[preset] then 
-      d("Preset Exceptions for '"..presetData.displayName.."'")
-      printTableOfSets( presetData.exceptions ) 
-    end
+  local enabledStr = self.store.enabled and "On" or "Off"
+  d( zo_strformat("[<<1>>] Incognito feature is <<2>>!", ColorString("LibSetDetection", "cyan"), ColorString(self.store.enabled and "On" or "Off",self.store.enabled and "green" or "red") ) )
+  d( ColorString("Whitelist:", "orange") )
+  local setList = {}
+  for setId, _ in pairs( self.whiteList) do 
+    table.insert(setList, setId) 
   end
-  if not ZO_IsTableEmpty(store.exceptions) then 
-    d("Custom Exceptions")
-    printTableOfSets( store.exceptions ) 
+  table.sort(setList) 
+  for idx, setId in ipairs(setList) do 
+    d( zo_strformat("<<1>> - <<2>> (<<3>>)", idx, ColorString(GetSetName(setId), "orange"), setId ))
   end
 end
 
@@ -1658,13 +1657,20 @@ end
 
 local cmdList = {
   ["incognito"] = {"overview of commands to use the incognito feature"}, 
-  ["debug"] = {"prints debug setting for each module"},
-  --["debug toggle"] = {"toggles selected debug state", "*moduleName* or *moduleAcronym"}, 
+  ["incognito help"] = {"Explains the incognito feature and how to use it."}, 
+  ["incognito toggle"] = {"Switches the incognito feature on/off."}, 
+  ["incognito print"] = {"Prints to chat the current white list."}, 
+  ["incognito add"] = {"Adds the set with the provided id to the white list", "*setId*"}, 
+  ["incognito remove"] = {"Removes the set with the provided id from the white list", "*setId*"}, 
+
   ["equipped"] = {"List of all gear pieces equipped by the player"},
   ["setdata"] = {"List of equipped set for all available units", "*unitTag (optional)"},
   ["groupsets"] = {"List of all fully equipped sets in your group with the corresponding member"},
   ["setid"] = {"List of set IDs whose names contain the specified search string.", "*searchStr*"},
   ["setname"] = {"Name of the set with the specified setId",  "*setId*"},
+
+  ["debug"] = {"prints debug setting for each module"},
+  ["debug toggle"] = {"toggles selected debug state", "*moduleName* or *moduleAcronym"}, 
 }
 
 local moduleList = {
@@ -1694,17 +1700,23 @@ SLASH_COMMANDS["/lsd"] = function( input )
 
   local cmd = table.remove(param, 1) 
   
+  local function _printCmd(cmdName)
+    local cmdData = cmdList[cmdName]  
+    local cmdStr = ColorString(zo_strformat("/lsd <<1>> <<2>>", cmdName, cmdData[2] or ""), "cyan") 
+    d( zo_strformat("<<1>> - <<2>>", cmdStr, cmdData[1]) )
+  end
+
   if not cmd or cmd == ""  then 
     --- overview of all available commands 
-    local function _printCmd(cmdName)
-      local cmdData = cmdList[cmdName]  
-      local cmdStr = ColorString(zo_strformat("/lsd <<1>> <<2>>", cmdName, cmdData[2] or ""), "cyan") 
-      d( zo_strformat("<<1>> - <<2>>", cmdStr, cmdData[1]) )
-    end
+    
     d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), "Overview of available chat commands") ) 
-    d( ColorString("-- Library Interface --", "orange"))
-    _printCmd( "incognito" )
-    _printCmd( "debug" )
+    d( ColorString("-- Incognito Feature --", "orange"))
+    _printCmd( "incognito help" )
+    _printCmd( "incognito toggle" )
+    _printCmd( "incognito print" )
+    _printCmd( "incognito add" )
+    _printCmd( "incognito remove" )
+    --_printCmd( "debug" )
     --_printCmd( "debug toggle" )
     d( ColorString("-- Output Data --", "orange"))
     _printCmd( "equipped" )
@@ -1718,31 +1730,54 @@ SLASH_COMMANDS["/lsd"] = function( input )
   elseif cmd == "incognito" then 
     if param[1] == "toggle" then 
       IncognitoFeature.store.enabled = not IncognitoFeature.store.enabled
+      d( zo_strformat("[<<1>>] Incognito Feature was <<2>>!", ColorString("LibSetDetection", "cyan"), ColorString(IncognitoFeature.store.enabled and "activated" or "deactivated", IncognitoFeature.store.enabled and "green" or "red")  ))
     elseif param[1] == "add" then
       local setId = tonumber(param[2]) 
       if setId then -- setId is nil, if param[2] cant be converted to number
         setId = math.floor(setId) -- make sure only integer values for setIds
-        IncognitoFeature.store.exceptions[ setId ] = true
-        IncognitoFeature:BuildWhiteList()
+        if setId == 0 or setId == 1 or GetSetName(setId)=="" then 
+          d("invalid setId") 
+        elseif IncognitoFeature.store.exceptions[ setId ]then 
+          d( zo_strformat("[<<1>>] <<2>> (<<3>>) is already on incognito whitelist. ", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId),"orange"), setId ) )
+        else 
+          IncognitoFeature.store.exceptions[ setId ] = true
+          IncognitoFeature:BuildWhiteList()
+          d( zo_strformat("[<<1>>] <<2>> (<<3>>) was added to incognito whitelist. ", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId),"orange"), setId ) )
+        end
       else 
-        d("setId must be a number") 
+        d( zo_strformat("[<<1>>] <<2>>:", ColorString("LibSetDetection", "cyan"), "*setId* must be a number" )) 
       end
     elseif param[1] == "remove" then 
       local setId = tonumber( param[2] )
       if setId then 
-        setId = math.floor(setId) -- make sure only integer values for setIds
-        IncognitoFeature.store.exceptions[ setId ] = nil
-        IncognitoFeature:BuildWhiteList() 
+        setId = math.floor(setId) -- make sure only integer values for setIds 
+        if IncognitoFeature.store.exceptions[ setId ] then 
+          IncognitoFeature.store.exceptions[ setId ] = nil
+          IncognitoFeature:BuildWhiteList() 
+          d( zo_strformat("[<<1>>] <<2>> (<<3>>) was removed from incognito whitelist. ", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId),"orange"), setId ) )
+        else 
+          d( zo_strformat("[<<1>>] <<2>> (<<3>>) was not on incognito whitelist. ", ColorString("LibSetDetection", "cyan"), ColorString(GetSetName(setId),"orange"), setId ) )
+        end
       else
-        d("setId must be a number") 
+        d( zo_strformat("[<<1>>] <<2>>:", ColorString("LibSetDetection", "cyan"), "*setId* must be a number" ))
       end  
     elseif param[1] == "print" then 
       IncognitoFeature:PrintWhiteListToChat()
+    elseif param[1] == "help" then 
+      d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), ColorString("Incognito Feature - Help","orange") ).."\n"..
+      ColorString("LibSetDetection", "cyan").." shares your equipped sets with your group when '"..ColorString("LibGroupBroadcast", "cyan").."' is installed. "..
+      "The "..ColorString("Incognito Feature", "orange").." (off by default) can be used to restrict which sets are shared with your group."..
+      "If enabled, any set not part of the whitelist will be send as 'incognito'. If disabled all sets are shared. Note, that this does not impact received data."..
+      "Sets can be added and removed from the white with "..ColorString("/lsd incognito add", "cyan").." and "..ColorString("/lsd incognito remove", "cyan").." and the set's id."..
+      "This library provides many ways to determine setId's, e.g. using the chat command "..ColorString("/lsd setid *searchString*", "cyan").."."..
+      "The current whitelist can be printed to chat using "..ColorString("/lsd incognito print", "cyan")..".")
     else  -- overview of incognito functions
-      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito toggle", "cyan"), "" ) ) 
-      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito add *setId*", "cyan"), "" ) ) 
-      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito remove *setId", "cyan"), "" ) ) 
-      d( zo_strformat("<<1>> <<2>>", ColorString("/lsd incognito print", "cyan"), "" ) ) 
+      d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), "Chat interface for incognito feature:") ) 
+      _printCmd( "incognito help" )
+      _printCmd( "incognito toggle" )
+      _printCmd( "incognito print" )
+      _printCmd( "incognito add" )
+      _printCmd( "incognito remove" )
     end
   
     --- equipped 
