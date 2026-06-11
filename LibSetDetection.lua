@@ -1560,8 +1560,6 @@ end
 
 
 
-
-
 --- Raw Data Access 
 function LSD.GetUnitRawNumEquipList( unitTag ) 
   return AccessSetManager( "GetRawNumEquipList", unitTag )
@@ -1590,14 +1588,6 @@ function LSD.GetAvailableUnitTags()
   if GM.isGrouped then table.insert(availableTags, GetLocalPlayerGroupUnitTag() ) end
   return availableTags 
 end
-
-
----@New ToDo 
-function LSD.IsUnitIncognito( unitTag ) 
-  local unitName = GetUnitName(unitTag) 
-  return GroupManager.isIncognito[unitName] 
-end
-
 
 
 --- Utility Functions
