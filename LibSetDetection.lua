@@ -7,7 +7,7 @@ local LSD = LibSetDetection
 -- [x] menu addition 
 -- [x] actual filter table 
 -- [x] send own ingocnito state --> dont need incognito state since incognito set is unique 
--- [ ] debug for incognito feature
+-- [x] debug for incognito feature
 -- [x] make print white list pretty 
 -- [ ] testing 
 
@@ -1140,6 +1140,12 @@ end
 
 function SlotManager:UpdateSlot( slotId ) 
   if libDebug and self.debug then debugMsg( "Slot", zo_strformat("Checking specific equipment slot - <<1>>", ColorString(equipSlotList[slotId].." update", "orange") ) )  end 
+  local oldSetId = self.equippedGear[slotId]
+  local newSetId = GetSetId(slotId)
+  if oldSetId == newSetId then 
+    if libDebug and self.debug then debugMsg( "Slot", zo_strformat("No changes in setId at <<1>> detected", ColorString(equipSlotList[slotId], "orange") ) ) end
+    return 
+  end 
   self:UpdateSetId( slotId ) 
   self:ResetQueue() 
 end
