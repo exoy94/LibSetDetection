@@ -1586,6 +1586,20 @@ end
 
 
 --- Utility Functions
+function LSD.IsSetActiveOnCurrentBar( setId ) 
+  local activeType = LSD.GetUnitSetActiveType("player", setId) 
+  -- check the trivial cases 
+  if activeType == LSD_ACTIVE_TYPE_NONE then return false end 
+  if activeType == LSD_ACTIVE_TYPE_DUAL_BAR then return true end 
+  -- check hotbar specific cases 
+  local currentBar = GetActiveWeaponPairInfo() 
+  if currentBar == ACTIVE_WEAPON_PAIR_MAIN and activeType == LSD_ACTIVE_TYPE_FRONT_BAR then return true end 
+  if currentBar == ACTIVE_WEAPON_PAIR_BACKUP and activeType == LSD_ACTIVE_TYPE_BACK_BAR then return true end 
+  -- all other cases
+  return false 
+end
+
+
 function LSD.ConvertActiveType( activeType ) 
   local activeTypeConversion = {
     [LSD_ACTIVE_TYPE_NONE] = {false, false, false, false},
