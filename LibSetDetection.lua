@@ -224,8 +224,8 @@ local twoHanderList = {
 
 
 local customSetData = {
-  [0] = { ["setName"] = "Generic Gear"},        
-  [1] = { ["setName"] = "Incognito Set" } ,     -- Incognito Set 
+  [0] = { ["setName"] = "Generic Gear", ["maxEquip"] = 15},        -- Generic Set (not an actual set)    
+  [1] = { ["setName"] = "Incognito Set", ["maxEquip"] = 15 } ,     -- Incognito Set 
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
 }
@@ -276,7 +276,6 @@ end
 
 local function GetMaxEquip( setId )
   local _, _, _, _, _, maxEquipZos = GetItemSetInfo( setId ) 
-  if maxEquipZos == 0 then maxEquipZos = 15 end -- ensures that no set change event can be triggered by not existing sets 
   maxEquip = CheckForCustomAttributeValue(setId, "maxEquip", maxEquipZos) 
   return maxEquip, maxEquipZos
 end
