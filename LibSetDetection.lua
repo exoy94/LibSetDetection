@@ -1270,8 +1270,12 @@ function LookupTables:GetSetType( setId )
   if self:ExternalToInternalId("mystical", setId) then return LSD_SET_TYPE_MYSTICAL 
   elseif self:ExternalToInternalId("undaunted", setId) then return LSD_SET_TYPE_UNDAUNTED
   elseif self:ExternalToInternalId("weapon", setId) then return LSD_SET_TYPE_ABILITY_ALTERING
-  else 
-    return LSD_SET_TYPE_NORMAL 
+  else  
+    if GetMaxEquip(setId) == 0 then 
+      return nil 
+    else 
+      return LSD_SET_TYPE_NORMAL 
+    end
   end
 end
 
@@ -1542,15 +1546,21 @@ end
 
 --- Standard Data Access 
 function LSD.GetUnitSetActiveType( unitTag, setId )
+  if not LSD.AreUnitDataAvailable(unitTag) then return LSD_ACTIVE_TYPE_NONE end
   return AccessSetManager( "GetSetActiveType", unitTag, setId )
+  -- return: activeType *number* (library specific property)
 end
 
 function LSD.GetUnitSetNumEquip( unitTag, setId )
+  if not LSD.AreUnitDataAvailable(unitTag) then return 0, 0, 0 end
   return AccessSetManager( "GetSetNumEquip", unitTag, setId )  
+  -- return: equipBody *number*, equipFront *number*, equipBack *number*
 end
 
 function LSD.GetUnitSetData( unitTag )
+  if not LSD.AreUnitDataAvailable(unitTag) then return {} end
   return AccessSetManager( "GetSetData", unitTag  )
+  -- return: setData *table* (key = setId, value = setSpecificData)
 end
 
 
@@ -1571,11 +1581,13 @@ function LSD.AreUnitDataAvailable( unitTag )
   return GroupManager.groupSets[unitName] and true or false 
 end
 
-function LSD.GetAvailableUnitTags() 
+function LSD.GetAvailableUnitTags( ignorePlayerTag ) 
   local GM = GroupManager 
   if GM.mapOutdated then GM:UpdateGroupMap() end 
   local availableTags = {}
-  table.insert(availableTags, "player")
+  if not ignorePlayerTag then 
+    table.insert(availableTags, "player")
+  end
   for unitName, _ in pairs(GM.groupSets) do 
     table.insert( availableTags, GM.groupMap[unitName])
   end 
@@ -1608,11 +1620,12 @@ function LSD.ConvertActiveType( activeType )
   }
   if activeTypeConversion[activeType] then 
     local returnTable = activeTypeConversion[activeType]
-    -- either-Bar, both-Bars, frontBar, backBar
+
     return returnTable[1], returnTable[2], returnTable[3], returnTable[4]
   else 
-    return 
+    return nil,nil,nil,nil
   end
+  -- return: either-Bar *bool*, both-Bars *bool*, frontBar *bool*, backBar *bool*
 end
 
 function LSD.GetSetIdByItemLink( itemLink )
@@ -1629,12 +1642,15 @@ function LSD.GetSetName( setId, withoutPerfectedString )
 end 
 
 function LSD.GetSetMaxEquip( setId )
+  --     maxEquip: value used by library, is equal to zosMaxEquip except for special cases defined in "customSetData"
+  --  zosMaxEquip: value return by vanilla function "GetItemSetInfo"; returns zero if set does not exist
+  -- returns maxEquip, zosMaxEquip
   return GetMaxEquip( setId ) 
 end
 
 
 --- Set Type 
-function LSD.GetSetType( setId ) 
+function LSD.GetSetType( setId )
   return LookupTables:GetSetType( ConvertToUnperfected(setId) ) 
 end
 
