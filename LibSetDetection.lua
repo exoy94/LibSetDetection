@@ -1,19 +1,9 @@
 LibSetDetection = LibSetDetection or {}
 local LSD = LibSetDetection
 
----@ToDo  
--- [x] local reference on LSD 
--- [x] remove constants from global table  
--- [x] menu addition 
--- [x] actual filter table 
--- [x] send own ingocnito state --> dont need incognito state since incognito set is unique 
--- [x] debug for incognito feature
--- [x] make print white list pretty 
--- [ ] testing 
-
 local libName = "LibSetDetection"
 local libVersion = 5
-local libDebug = true 
+local libDebug = false 
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
@@ -36,6 +26,7 @@ local Development = {}
 --[[ -- Templates -- ]]
 --[[ --------------- ]]
 
+-- ensures correct structure of table and no unintended references
 local function Template_SlotCategorySubtables( initBody, initFront, initBack )
   initBody = initBody or 0 
   initFront = initFront or 0 
@@ -233,7 +224,7 @@ local twoHanderList = {
 
 
 local customSetData = {
-  [0] = { ["setName"] = "Generic Gear"}, 
+  [0] = { ["setName"] = "Generic Gear"},        
   [1] = { ["setName"] = "Incognito Set" } ,     -- Incognito Set 
   [695] = { ["maxEquip"] = 5 },   -- Shattered-Fate
   [810] = { ["maxEquip"] = 5 },   -- Fellowships Fortitude 
@@ -397,7 +388,6 @@ end
 
 
 local function ResultCode( resultCode )  
-  --- debug esult
   if libDebug and CallbackManager.debug then 
     debugMsg("CM", "Result: "..registryResultCodes[resultCode])
   end
@@ -562,7 +552,6 @@ function SetManager:UpdateData( newRawData, unitTag )
   self:ConvertDataToUnperfected()   -- all perfected pieces are handled as unperfected  
   self:AnalyseData()  -- determines, which sets are active 
   local changeList = self:DetermineChanges()  -- determine, what has changed (un-)equip/ update
-  --- @ToDo here i can determine, if the changes only affect sets that are filtered
   self:FireCallbacks( changeList )  -- fire callbacks according to detected changes
 end
 
@@ -1052,9 +1041,9 @@ function DataMsg:InitMsgHandler()
   self.protocol:AddField( CreateFlagField("requestSync") )
   self.protocol:OnData( function(...) self:OnIncomingMsg(...) end )  
   
-  ---@WIP - only works for protocol and when i prevent lgb to set internal to nil
-  local settings = IncognitoFeature:GetProtocolMenu()
-  self.protocol:SetUserSettings( settings )  
+  --- @ToDo: Awaiting LGB-Update, requires exposed function for user settings 
+  --local settings = IncognitoFeature:GetProtocolMenu()
+  --self.protocol:SetUserSettings( settings )  
   
   self.protocol:Finalize()
 end
@@ -1142,8 +1131,8 @@ function SlotManager:UpdateSlot( slotId )
   if libDebug and self.debug then debugMsg( "Slot", zo_strformat("Checking specific equipment slot - <<1>>", ColorString(equipSlotList[slotId].." update", "orange") ) )  end 
   local oldSetId = self.equippedGear[slotId]
   local newSetId = GetSetId(slotId)
-  if oldSetId == newSetId then 
-    if libDebug and self.debug then debugMsg( "Slot", zo_strformat("No changes in setId at <<1>> detected", ColorString(equipSlotList[slotId], "orange") ) ) end
+  if oldSetId == newSetId then -- early out to catch equipping a set piece with the same set or reparing armor pieces
+    if libDebug and self.debug then debugMsg( "Slot", zo_strformat("No setId changes for <<1>> detected", ColorString(equipSlotList[slotId], "orange") ) ) end
     return 
   end 
   self:UpdateSetId( slotId ) 
@@ -1432,9 +1421,10 @@ function IncognitoFeature:GetProtocolMenu()
     end
   })
 
-  local settings = LibGroupBroadcast.internal.class.LAM2UserSettings:New() ---@Todo not intended way 
-  settings:Initialize( options )  
-  return settings 
+  --- @ToDo Placeholder until LGB-Update 
+  --local settings = LibGroupBroadcast.LAM2UserSettings:New() 
+  --settings:Initialize( options )  
+  --return settings 
 end
 
 
@@ -1565,7 +1555,6 @@ function LSD.GetUnitSetData( unitTag )
 end
 
 
-
 --- Raw Data Access 
 function LSD.GetUnitRawNumEquipList( unitTag ) 
   return AccessSetManager( "GetRawNumEquipList", unitTag )
@@ -1606,6 +1595,7 @@ function LSD.ConvertActiveType( activeType )
   }
   if activeTypeConversion[activeType] then 
     local returnTable = activeTypeConversion[activeType]
+    -- either-Bar, both-Bars, frontBar, backBar
     return returnTable[1], returnTable[2], returnTable[3], returnTable[4]
   else 
     return 
@@ -1791,9 +1781,9 @@ SLASH_COMMANDS["/lsd"] = function( input )
     elseif param[1] == "help" then 
       d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), ColorString("Incognito Feature - Help","orange") ).."\n"..
       ColorString("LibSetDetection", "cyan").." shares your equipped sets with your group when '"..ColorString("LibGroupBroadcast", "cyan").."' is installed. "..
-      "The "..ColorString("Incognito Feature", "orange").." (off by default) can be used to restrict which sets are shared with your group."..
-      "If enabled, any set not part of the whitelist will be send as 'incognito'. If disabled all sets are shared. Note, that this does not impact received data."..
-      "Sets can be added and removed from the white with "..ColorString("/lsd incognito add", "cyan").." and "..ColorString("/lsd incognito remove", "cyan").." and the set's id."..
+      "The "..ColorString("Incognito Feature", "orange").." (off by default) can be used to restrict which sets are shared with your group. "..
+      "If enabled, any set not part of the whitelist will be send as 'incognito'. If disabled all sets are shared. Note, that this does not impact received data. "..
+      "Sets can be added and removed from the whitelist with "..ColorString("/lsd incognito add", "cyan").." and "..ColorString("/lsd incognito remove", "cyan").." and the set's id. "..
       "This library provides many ways to determine setId's, e.g. using the chat command "..ColorString("/lsd setid *searchString*", "cyan").."."..
       "The current whitelist can be printed to chat using "..ColorString("/lsd incognito print", "cyan")..".")
     else  -- overview of incognito functions
