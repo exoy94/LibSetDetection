@@ -1275,7 +1275,7 @@ function LookupTables:GetSetType( setId )
   elseif self:ExternalToInternalId("weapon", setId) then return LSD_SET_TYPE_ABILITY_ALTERING
   else  
     if GetMaxEquip(setId) == 0 then 
-      return nil 
+      return LSD_SET_TYPE_NONE 
     else 
       return LSD_SET_TYPE_NORMAL 
     end
@@ -1549,8 +1549,7 @@ end
 
 --- Standard Data Access 
 function LSD.GetUnitSetActiveType( unitTag, setId )
-  if not LSD.AreUnitDataAvailable(unitTag) then return LSD_ACTIVE_TYPE_NONE end
-  return AccessSetManager( "GetSetActiveType", unitTag, setId )
+  return AccessSetManager( "GetSetActiveType", unitTag, setId ) or LSD_ACTIVE_TYPE_NONE
   -- return: activeType *number* (library specific property)
 end
 
@@ -1569,7 +1568,7 @@ end
 
 --- Raw Data Access 
 function LSD.GetUnitRawNumEquipList( unitTag ) 
-  return AccessSetManager( "GetRawNumEquipList", unitTag )
+  return AccessSetManager( "GetRawNumEquipList", unitTag ) or {}
 end
 
 function LSD.GetPlayerEquippedGear( )
