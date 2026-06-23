@@ -1599,6 +1599,37 @@ end
 
 
 --- Utility Functions
+
+function LSD.GetUnitTagsWithSpecificSet( setId, ignorePlayerTag ) 
+  local tagsWithSet = {}
+  for _, unitTag in pairs(LSD.GetAvailableUnitTags(ignorePlayerTag)) do 
+    local unitSets = LSD.GetUnitSetData(unitTag) 
+    if unitSets[setId] then 
+      if unitSets[setId].activeType > 0 then 
+        table.insert(tagsWithSet, unitTag) 
+      end
+    end
+  end
+  return tagsWithSet
+end
+
+
+function LSD.GetGroupSets() 
+  local groupSets = {}
+  for _, unitTag in pairs( LSD.GetAvailableUnitTags( true ) ) do
+    local unitSets = LSD.GetUnitSetData(unitTag)  
+    for setId, setData in pairs(unitSets) do 
+      if setData.activeType > 0 then -- only listing complete sets
+        groupSets[setId] = groupSets[setId] or {}
+        table.insert( groupSets[setId], unitTag )
+      end
+    end
+  end
+  return groupSets
+end
+
+
+
 function LSD.IsSetActiveOnCurrentBar( setId ) 
   local activeType = LSD.GetUnitSetActiveType("player", setId) 
   -- check the trivial cases 
