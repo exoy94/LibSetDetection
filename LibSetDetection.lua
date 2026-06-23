@@ -1433,6 +1433,39 @@ function IncognitoFeature:GetProtocolMenu()
   --return settings 
 end
 
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+--[[ %% ------------------------ %% ]]
+--[[ %% -- Immediate Send for -- %% ]]
+--[[ %% -- Quickchange Addons -- %% ]]
+--[[ %% ------------------------ %% ]]
+--[[ %%%%%%%%%%%%%%%%%%%%%%%%%%%%%% ]]
+
+-- the build in queues for slot updates and broadcast are to reduce frequency of event fireing 
+-- and broadcasts when manually changing gear 
+-- however, when using addons to change your setup this wait is unnecessary.  
+-- i will add support for each addon this applies to manually, so I will limit this to 
+--  a) very popular addons 
+--  b) addons that provide a propper way to detect that their equip routine is done 
+
+-- i dont want to include any dependency in my library for addons
+-- so instead i will register on the first player-activated and manually check if the addon exist 
+-- since this is only done once this is okay 
+
+local function WWTest() 
+  d("successfull ww equip detected") ---@debug
+end
+
+local function RegisterImmediateSendHooks() 
+  exoytestvar = true
+  --- Wizards Wardrobe 
+  if WizardsWardrobe then 
+    if WizardsWardrobe.callbackManager then 
+      WizardsWardrobe.callbackManager:RegisterCallback("WW_OnSetupSwapSuccess", WWTest)
+    end
+  end
+  
+end
+
 
 
 
@@ -1445,12 +1478,14 @@ end
 
 local function OnInitialPlayerActivated() 
   EM:UnregisterForEvent( libName .."InitialPlayerActivated", EVENT_PLAYER_ACTIVATED)
+  RegisterImmediateSendHooks() 
   SlotManager:UpdateLoadout() 
 end
 
 
 local function OnSlotUpdate(_, _, slotId, _, _, _) 
 --local function OnSlotUpdate(eventCode, bagId, slotId, isNewItem, itemSound, inventoryUpdate, stackCount) 
+  d("slot update") ---@debug
   SlotManager:UpdateSlot(slotId)
 end
 
