@@ -100,6 +100,7 @@ LSD.constants = {
   ["active_type_front_bar"] = 2, 
   ["active_type_back_bar"] = 3, 
   -- set type
+  ["set_type_none"] = -1, 
   ["set_type_normal"] = 0, 
   ["set_type_mystic"] = 1, 
   ["set_type_undaunted"] = 2, 
@@ -163,12 +164,14 @@ local activeTypes = {
 }
 
 --- setType 
+local LSD_SET_TYPE_NONE = Const.set_type_none   -- already local because did not exist before V5
 LSD_SET_TYPE_NORMAL = Const.set_type_normal
 LSD_SET_TYPE_MYSTICAL = Const.set_type_mystic
 LSD_SET_TYPE_UNDAUNTED = Const.set_type_undaunted
 LSD_SET_TYPE_ABILITY_ALTERING = Const.set_type_ability_altering
 
 local setTypes = {
+  [LSD_SET_TYPE_NONE] = "none",
   [LSD_SET_TYPE_NORMAL] = "normal", 
   [LSD_SET_TYPE_MYSTICAL] = "mystical", 
   [LSD_SET_TYPE_UNDAUNTED] = "undaunted", 
