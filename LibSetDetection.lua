@@ -1795,8 +1795,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
   end
 
   if not cmd or cmd == ""  then 
+
     --- overview of all available commands 
-    
     d( zo_strformat("[<<1>>] <<2>>", ColorString("LibSetDetection", "cyan"), "Overview of available chat commands") ) 
     d( ColorString("-- Incognito Feature --", "orange"))
     _printCmd( "incognito help" )
@@ -1814,6 +1814,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
     _printCmd( "setid" )
     _printCmd( "setname" )
     d("--------------------")
+
   --- incognito feature 
   elseif cmd == "incognito" then 
     if param[1] == "toggle" then 
@@ -1884,19 +1885,8 @@ SLASH_COMMANDS["/lsd"] = function( input )
     d( "--------------------------------------------------")
   
     --- groupsets
-  elseif cmd == "groupsets" then
-    local groupSets = {} 
-    for _, unitTag in pairs(LSD.GetAvailableUnitTags()) do 
-      if unitTag ~= "player" then 
-        local unitSets = LSD.GetUnitSetData(unitTag)  
-        for setId, setData in pairs(unitSets) do 
-          if setData.activeType > 0 then -- only listing complete sets
-            groupSets[setId] = groupSets[setId] or {}
-            groupSets[setId][unitTag] = true
-          end
-        end
-      end
-    end
+  elseif cmd == "groupsets" then 
+    local groupSets = LSD.GetGroupSets() 
     local sortedGroupSets = {}
     for setId, _ in pairs(groupSets) do 
       table.insert(sortedGroupSets, setId)
@@ -1906,10 +1896,11 @@ SLASH_COMMANDS["/lsd"] = function( input )
     for _, setId in pairs(sortedGroupSets) do 
       d("--------------------")
       d( zo_strformat("[<<1>>] <<2>>", setId, ColorString(GetSetName(setId), "orange") ) )
+      local unitList = InvertTable( groupSets[setId] )
       local counter = 0
       for i=1,LARGE_GROUP_SIZE_THRESHOLD do 
         local unitTag = "group"..tostring(i) 
-        if groupSets[setId][unitTag] then   
+        if unitList[unitTag] then   
           local role = GetGroupMemberSelectedRole(unitTag) 
           local tagStr = zo_strformat("<<1>> - <<2>>", unitTag, roleList[role][1])
           counter = counter + 1
