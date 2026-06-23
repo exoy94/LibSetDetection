@@ -3,7 +3,7 @@ local LSD = LibSetDetection
 
 local libName = "LibSetDetection"
 local libVersion = 5
-local libDebug = false 
+local libDebug = false
 local playerName = GetUnitName("player") 
 local EM = GetEventManager() 
 
@@ -1488,6 +1488,8 @@ local function Initialize()
   PlayerSets = SetManager:New( LSD_UNIT_TYPE_PLAYER ) 
   EmptySetManager = SetManager:New( LSD_UNIT_TYPE_GROUP )
 
+
+
   --- Register Events 
   EM:RegisterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, OnSlotUpdate )
   EM:AddFilterForEvent( libName.."EquipChange", EVENT_INVENTORY_SINGLE_SLOT_UPDATE, REGISTER_FILTER_BAG_ID, BAG_WORN)
@@ -1691,7 +1693,7 @@ local function IsSpecificSetType( setType, setId )
   return LookupTables:GetSetType( ConvertToUnperfected(setId) )  == setType 
 end
 
-function LSD.IsSetMystical( setId ) 
+function LSD.IsSetMystic( setId ) 
   return IsSpecificSetType( LSD_SET_TYPE_MYSTICAL, ConvertToUnperfected(setId) ) 
 end
 
@@ -1711,6 +1713,13 @@ end
 
 function LSD.InvertTable( t )
   return InvertTable(t) 
+end
+
+--[[ Backwards Compatibility with V4 ]]
+--[[ Will be removed with Game Update 51 
+]]
+function LSD.IsSetMystical( ... )   
+  return LSD.IsSetMystic( ... )
 end
 
 
