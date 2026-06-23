@@ -1819,6 +1819,7 @@ SLASH_COMMANDS["/lsd"] = function( input )
   elseif cmd == "incognito" then 
     if param[1] == "toggle" then 
       IncognitoFeature.store.enabled = not IncognitoFeature.store.enabled
+      SlotManager:UpdateLoadout()
       d( zo_strformat("[<<1>>] Incognito Feature was <<2>>!", ColorString("LibSetDetection", "cyan"), ColorString(IncognitoFeature.store.enabled and "activated" or "deactivated", IncognitoFeature.store.enabled and "green" or "red")  ))
     elseif param[1] == "add" then
       local setId = tonumber(param[2]) 
