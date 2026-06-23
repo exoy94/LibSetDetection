@@ -1672,6 +1672,17 @@ function LSD.IsSetAbilityAltering( setId )
   return IsSpecificSetType( LSD_SET_TYPE_ABILITY_ALTERING, ConvertToUnperfected(setId) ) 
 end
 
+
+--- Table Utilities  
+function LSD.MergeTables(t1, t2) 
+  return MergeTables(t1, t2) 
+end
+
+function LSD.InvertTable( t )
+  return InvertTable(t) 
+end
+
+
 --[[ ----------------------------- ]]
 --[[ -- Backwards Compatibility -- ]]
 --[[ -- for function used in V3 -- ]] 
