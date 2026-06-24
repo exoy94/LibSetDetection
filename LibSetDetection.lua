@@ -96,9 +96,9 @@ LSD.constants = {
   ["unit_type_group"] = 2, 
   -- active type 
   ["active_type_none"] = 0, 
-  ["active_type_dual_bar"] = 1, 
-  ["active_type_front_bar"] = 2, 
-  ["active_type_back_bar"] = 3, 
+  ["active_type_dual"] = 1, 
+  ["active_type_front"] = 2, 
+  ["active_type_back"] = 3, 
   -- set type
   ["set_type_none"] = -1, 
   ["set_type_normal"] = 0, 
@@ -152,9 +152,9 @@ local unitTypes = {
 
 --- activeType 
 LSD_ACTIVE_TYPE_NONE = Const.active_type_none
-LSD_ACTIVE_TYPE_DUAL_BAR = Const.active_type_dual_bar
-LSD_ACTIVE_TYPE_FRONT_BAR = Const.active_type_front_bar
-LSD_ACTIVE_TYPE_BACK_BAR = Const.active_type_back_bar
+LSD_ACTIVE_TYPE_DUAL_BAR = Const.active_type_dual
+LSD_ACTIVE_TYPE_FRONT_BAR = Const.active_type_front
+LSD_ACTIVE_TYPE_BACK_BAR = Const.active_type_back
 
 local activeTypes = {
   [LSD_ACTIVE_TYPE_NONE] = "None",
@@ -1567,6 +1567,46 @@ function LSD.GetUnitSetData( unitTag )
   -- return: setData *table* (key = setId, value = setSpecificData)
 end
 
+function LSD.GetGroupSets() 
+  local groupSets = {}
+  for _, unitTag in pairs( LSD.GetAvailableUnitTags( true ) ) do
+    local unitSets = LSD.GetUnitSetData(unitTag)  
+    for setId, setData in pairs(unitSets) do 
+      if setData.activeType > 0 then -- only listing complete sets
+        groupSets[setId] = groupSets[setId] or {}
+        table.insert( groupSets[setId], unitTag )
+      end
+    end
+  end
+  return groupSets
+end
+
+function LSD.IsSetActiveOnCurrentBar( setId ) 
+  local activeType = LSD.GetUnitSetActiveType("player", setId) 
+  -- check the trivial cases 
+  if activeType == LSD_ACTIVE_TYPE_NONE then return false end 
+  if activeType == LSD_ACTIVE_TYPE_DUAL_BAR then return true end 
+  -- check hotbar specific cases 
+  local currentBar = GetActiveWeaponPairInfo() 
+  if currentBar == ACTIVE_WEAPON_PAIR_MAIN and activeType == LSD_ACTIVE_TYPE_FRONT_BAR then return true end 
+  if currentBar == ACTIVE_WEAPON_PAIR_BACKUP and activeType == LSD_ACTIVE_TYPE_BACK_BAR then return true end 
+  -- all other cases
+  return false 
+end
+
+function LSD.GetUnitTagsWithSpecificSet( setId, ignorePlayerTag ) 
+  local tagsWithSet = {}
+  for _, unitTag in pairs(LSD.GetAvailableUnitTags(ignorePlayerTag)) do 
+    local unitSets = LSD.GetUnitSetData(unitTag) 
+    if unitSets[setId] then 
+      if unitSets[setId].activeType > 0 then 
+        table.insert(tagsWithSet, unitTag) 
+      end
+    end
+  end
+  return tagsWithSet
+end
+
 
 --- Raw Data Access 
 function LSD.GetUnitRawNumEquipList( unitTag ) 
@@ -1579,11 +1619,13 @@ end
 
 
 --- Data Availability 
-function LSD.AreUnitDataAvailable( unitTag ) 
+function LSD.IsUnitDataAvailable( unitTag ) 
   local unitName = GetUnitName(unitTag) 
   if unitName == playerName then return true end 
   return GroupManager.groupSets[unitName] and true or false 
 end
+
+
 
 function LSD.GetAvailableUnitTags( ignorePlayerTag ) 
   local GM = GroupManager 
@@ -1600,50 +1642,11 @@ function LSD.GetAvailableUnitTags( ignorePlayerTag )
 end
 
 
+
+
 --- Utility Functions
 
-function LSD.GetUnitTagsWithSpecificSet( setId, ignorePlayerTag ) 
-  local tagsWithSet = {}
-  for _, unitTag in pairs(LSD.GetAvailableUnitTags(ignorePlayerTag)) do 
-    local unitSets = LSD.GetUnitSetData(unitTag) 
-    if unitSets[setId] then 
-      if unitSets[setId].activeType > 0 then 
-        table.insert(tagsWithSet, unitTag) 
-      end
-    end
-  end
-  return tagsWithSet
-end
 
-
-function LSD.GetGroupSets() 
-  local groupSets = {}
-  for _, unitTag in pairs( LSD.GetAvailableUnitTags( true ) ) do
-    local unitSets = LSD.GetUnitSetData(unitTag)  
-    for setId, setData in pairs(unitSets) do 
-      if setData.activeType > 0 then -- only listing complete sets
-        groupSets[setId] = groupSets[setId] or {}
-        table.insert( groupSets[setId], unitTag )
-      end
-    end
-  end
-  return groupSets
-end
-
-
-
-function LSD.IsSetActiveOnCurrentBar( setId ) 
-  local activeType = LSD.GetUnitSetActiveType("player", setId) 
-  -- check the trivial cases 
-  if activeType == LSD_ACTIVE_TYPE_NONE then return false end 
-  if activeType == LSD_ACTIVE_TYPE_DUAL_BAR then return true end 
-  -- check hotbar specific cases 
-  local currentBar = GetActiveWeaponPairInfo() 
-  if currentBar == ACTIVE_WEAPON_PAIR_MAIN and activeType == LSD_ACTIVE_TYPE_FRONT_BAR then return true end 
-  if currentBar == ACTIVE_WEAPON_PAIR_BACKUP and activeType == LSD_ACTIVE_TYPE_BACK_BAR then return true end 
-  -- all other cases
-  return false 
-end
 
 
 function LSD.ConvertActiveType( activeType ) 
@@ -1716,10 +1719,14 @@ function LSD.InvertTable( t )
 end
 
 --[[ Backwards Compatibility with V4 ]]
---[[ Will be removed with Game Update 51 
-]]
+--[[ Will be removed with Game Update 51 ]]
+
 function LSD.IsSetMystical( ... )   
   return LSD.IsSetMystic( ... )
+end
+
+function LSD.AreUnitDataAvailable( ... ) 
+  return LSD.IsUnitDataAvailable( ... ) 
 end
 
 
